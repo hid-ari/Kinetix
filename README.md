@@ -6,6 +6,6 @@
 
 ## Visión General
 
-Kinetix conecta los flujos de trabajo críticos de una organización —desde el control de inventario y la contabilidad hasta la gestión de ventas y clientes— proporcionando visibilidad en tiempo real, trazabilidad operativa y analítica para la toma de decisiones estratégicas.
+(POR DEFINIR)
 
 ---
