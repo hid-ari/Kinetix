@@ -1,6 +1,6 @@
-# Kinetix ERP
+# Kinetix
 
-**Kinetix** es una plataforma ERP (Enterprise Resource Planning) modular, escalable y de alto rendimiento diseñada para centralizar, automatizar y optimizar las operaciones clave de las empresas en un solo ecosistema digital.
+(POR DEFINIR)
 
 ---
 
