@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
+    "dev": "node server.js",
     "check": "node --check server.js"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
     "express": "^5.1.0",
-    "mssql": "^11.0.1",
-    "msnodesqlv8": "^4.2.1"
+    "express-rate-limit": "^8.7.0",
+    "msnodesqlv8": "^4.2.1",
+    "mssql": "^11.0.1"
   }
 }

@@ -4,6 +4,14 @@ import crypto from 'node:crypto';
 import sql from 'mssql/msnodesqlv8.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+// M-05: rate limiting para protección contra fuerza bruta
+import { rateLimit } from 'express-rate-limit';
+
+// M-09: Logger estructurado JSON
+const originalLog = console.log;
+const originalError = console.error;
+console.log = (...args) => originalLog(JSON.stringify({ level: 'INFO', timestamp: new Date().toISOString(), message: args.join(' ') }));
+console.error = (...args) => originalError(JSON.stringify({ level: 'ERROR', timestamp: new Date().toISOString(), message: args.join(' ') }));
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -118,6 +126,8 @@ async function ensureOperationsSchema() {
       CONSTRAINT FK_FinanceInvoices_Users FOREIGN KEY (CreatedBy) REFERENCES dbo.UserOrganizations(UserId),
       CONSTRAINT CK_FinanceInvoices_Type CHECK (InvoiceType IN (N'Venta', N'Compra'))
     );
+    IF COL_LENGTH(N'dbo.FinanceInvoices', N'Ncf') IS NULL ALTER TABLE dbo.FinanceInvoices ADD Ncf NVARCHAR(19) NULL;
+    IF COL_LENGTH(N'dbo.UserOrganizations', N'ResetToken') IS NULL ALTER TABLE dbo.UserOrganizations ADD ResetToken CHAR(64) NULL, ResetTokenExpiresAt DATETIME2(0) NULL;
     IF OBJECT_ID(N'dbo.FinancePayments', N'U') IS NULL
     CREATE TABLE dbo.FinancePayments (
       Id BIGINT IDENTITY(1,1) PRIMARY KEY, CompanyId INT NOT NULL, InvoiceId BIGINT NULL, TransactionId BIGINT NULL,
@@ -151,18 +161,29 @@ async function ensureOperationsSchema() {
     INSERT INTO dbo.Permissions (ModuleName, PermissionName, Description)
     SELECT v.ModuleName, v.PermissionName, v.Description
     FROM (VALUES
-      (N'Inventario', N'Ver inventario', N'Consultar el módulo de inventario'),
-      (N'Productos', N'Ver productos', N'Consultar el catálogo de productos'),
-      (N'Productos', N'Crear productos', N'Crear productos'),
-      (N'Productos', N'Editar productos', N'Editar productos'),
-      (N'Existencias', N'Ver existencias', N'Consultar existencias por sucursal'),
-      (N'Movimientos', N'Ver movimientos', N'Consultar movimientos de inventario'),
-      (N'Movimientos', N'Registrar movimientos', N'Registrar entradas y salidas'),
-      (N'Alertas', N'Ver alertas', N'Consultar alertas de inventario'),
-      (N'Finanzas', N'Ver finanzas', N'Consultar el resumen financiero'),
-      (N'Finanzas', N'Registrar transacciones', N'Registrar ingresos y gastos'),
-      (N'Roles', N'Ver roles', N'Consultar roles y permisos'),
-      (N'Roles', N'Administrar roles', N'Crear roles y asignar permisos')
+      (N'Empresas',    N'Ver empresas',           N'Consultar el listado de empresas'),
+      (N'Empresas',    N'Crear empresas',          N'Crear nuevas empresas'),
+      (N'Empresas',    N'Editar empresas',         N'Editar información de empresas'),
+      (N'Usuarios',    N'Ver usuarios',            N'Consultar el listado de usuarios'),
+      (N'Usuarios',    N'Crear usuarios',          N'Crear nuevos usuarios'),
+      (N'Usuarios',    N'Editar usuarios',         N'Editar datos de usuarios'),
+      (N'Usuarios',    N'Desactivar usuarios',     N'Activar o desactivar usuarios'),
+      (N'Sucursales',  N'Ver sucursales',          N'Consultar el listado de sucursales'),
+      (N'Sucursales',  N'Crear sucursales',        N'Crear nuevas sucursales'),
+      (N'Sucursales',  N'Editar sucursales',       N'Editar y desactivar sucursales'),
+      (N'Auditoría',   N'Ver auditoría',           N'Consultar los registros de auditoría'),
+      (N'Inventario',  N'Ver inventario',          N'Consultar el módulo de inventario'),
+      (N'Productos',   N'Ver productos',           N'Consultar el catálogo de productos'),
+      (N'Productos',   N'Crear productos',         N'Crear productos'),
+      (N'Productos',   N'Editar productos',        N'Editar productos'),
+      (N'Existencias', N'Ver existencias',         N'Consultar existencias por sucursal'),
+      (N'Movimientos', N'Ver movimientos',         N'Consultar movimientos de inventario'),
+      (N'Movimientos', N'Registrar movimientos',   N'Registrar entradas y salidas'),
+      (N'Alertas',     N'Ver alertas',             N'Consultar alertas de inventario'),
+      (N'Finanzas',    N'Ver finanzas',            N'Consultar el resumen financiero'),
+      (N'Finanzas',    N'Registrar transacciones', N'Registrar ingresos y gastos'),
+      (N'Roles',       N'Ver roles',               N'Consultar roles y permisos'),
+      (N'Roles',       N'Administrar roles',       N'Crear roles y asignar permisos')
     ) AS v(ModuleName, PermissionName, Description)
     WHERE NOT EXISTS (
       SELECT 1 FROM dbo.Permissions AS p
@@ -176,15 +197,24 @@ async function ensureOperationsSchema() {
   `);
 }
 
-app.use(express.json());
-app.get('/', (_request, response) => response.sendFile(path.join(__dirname, 'index.html')));
-app.get('/index.html', (_request, response) => response.sendFile(path.join(__dirname, 'index.html')));
-app.get('/app.js', (_request, response) => response.sendFile(path.join(__dirname, 'app.js')));
-app.get('/styles.css', (_request, response) => response.sendFile(path.join(__dirname, 'styles.css')));
+app.use(express.json({ limit: '256kb' }));
+app.use(express.static(path.join(__dirname, 'public')));
+app.get('/', (_request, response) => response.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/index.html', (_request, response) => response.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/app.js', (_request, response) => response.sendFile(path.join(__dirname, 'public', 'js', 'app.js')));
+app.get('/styles.css', (_request, response) => response.sendFile(path.join(__dirname, 'public', 'styles.css')));
 app.use((_request, response, next) => {
+  // M-06: Content-Security-Policy
+  response.setHeader('Content-Security-Policy',
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+    "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self';");
   response.setHeader('X-Content-Type-Options', 'nosniff');
   response.setHeader('X-Frame-Options', 'DENY');
   response.setHeader('Referrer-Policy', 'same-origin');
+  // S-04: HSTS solo en producción
+  if (process.env.NODE_ENV === 'production') {
+    response.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
+  }
   next();
 });
 
@@ -265,12 +295,20 @@ async function requireAuth(request, response, next) {
   try {
     const token = parseCookies(request).kinetix_session;
     const session = await findPersistentSession(token);
-    if (!session || session.expiresAt < Date.now()) {
+    if (!session) {
       return response.status(401).json({ message: 'La sesión no es válida o ha expirado.' });
     }
     const user = await findUserById(session.userId);
     if (!user?.isActive) return response.status(403).json({ message: 'El usuario está inactivo.' });
-    request.user = user;
+    // Solo exponer campos necesarios — no incluir passwordHash (S-09)
+    request.user = {
+      userId: user.userId,
+      email: user.email,
+      isActive: user.isActive,
+      role: user.role,
+      companyId: user.companyId,
+      branchId: user.branchId
+    };
     next();
   } catch (error) {
     console.error('Authentication failed:', error.message);
@@ -347,7 +385,16 @@ app.use('/api', (request, response, next) => {
   return requireAuth(request, response, next);
 });
 
-app.post('/api/auth/login', async (request, response) => {
+// M-05: Rate limiting — 10 intentos por IP en 15 minutos
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Demasiados intentos de acceso. Inténtalo de nuevo en 15 minutos.' }
+});
+
+app.post('/api/auth/login', loginLimiter, async (request, response) => {
   const { email, password } = request.body;
   if (!email?.trim() || !password) return response.status(400).json({ message: 'Email y contraseña son obligatorios.' });
   try {
@@ -357,6 +404,19 @@ app.post('/api/auth/login', async (request, response) => {
       .query('SELECT TOP 1 UserId, PasswordHash, IsActive FROM dbo.UserOrganizations WHERE Email = @email;');
     const account = result.recordset[0];
     if (!account?.IsActive || !verifyPassword(password, account.PasswordHash)) {
+      // M-04: Auditar login fallido
+      try {
+        const failedRequest = pool.request()
+          .input('userId', sql.NVarChar(450), account?.UserId || null)
+          .input('action', sql.NVarChar(40), 'LOGIN_FAILED')
+          .input('module', sql.NVarChar(80), 'Acceso')
+          .input('entity', sql.NVarChar(80), 'User')
+          .input('entityId', sql.NVarChar(100), email.trim())
+          .input('ip', sql.VarChar(45), request.ip)
+          .input('userAgent', sql.NVarChar(500), request.get('user-agent') || null);
+        await failedRequest.query(`INSERT INTO dbo.AuditLogs (UserId, ActionName, ModuleName, EntityName, EntityId, IpAddress, UserAgent)
+                VALUES (@userId, @action, @module, @entity, @entityId, @ip, @userAgent);`);
+      } catch (_auditError) { /* no bloquear el flujo por error de auditoría */ }
       return response.status(401).json({ message: 'Email o contraseña incorrectos.' });
     }
     const token = crypto.randomBytes(32).toString('hex');
@@ -400,10 +460,46 @@ app.post('/api/auth/change-password', async (request, response) => {
 });
 
 app.post('/api/auth/logout', async (request, response) => {
-  const token = parseCookies(request).kinetix_session;
-  await deletePersistentSession(token);
-  response.setHeader('Set-Cookie', 'kinetix_session=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax');
+  await deletePersistentSession(parseCookies(request).kinetix_session);
+  response.clearCookie('kinetix_session');
   response.status(204).end();
+});
+
+// M-03: Recuperación de contraseña
+app.post('/api/auth/forgot-password', async (request, response) => {
+  const { email } = request.body;
+  if (!email) return response.status(400).json({ message: 'Email es obligatorio.' });
+  const pool = await getPool();
+  const result = await pool.request().input('email', sql.NVarChar(254), email.trim()).query('SELECT UserId, FirstName FROM dbo.UserOrganizations WHERE Email = @email AND IsActive = 1;');
+  const user = result.recordset[0];
+  if (user) {
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expires = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
+    await pool.request().input('userId', sql.NVarChar(450), user.UserId).input('token', sql.Char(64), tokenHash).input('expires', sql.DateTime2, expires)
+      .query('UPDATE dbo.UserOrganizations SET ResetToken = @token, ResetTokenExpiresAt = @expires WHERE UserId = @userId;');
+    // Simular envío de correo escribiendo en el logger
+    console.log(`[EMAIL] To: ${email} | Subject: Recuperación de contraseña | Link: /reset-password?token=${rawToken}&email=${encodeURIComponent(email)}`);
+  }
+  // Respondemos 200 siempre para no enumerar usuarios
+  response.json({ message: 'Si el correo existe, recibirás un enlace de recuperación.' });
+});
+
+app.post('/api/auth/reset-password', async (request, response) => {
+  const { email, token, newPassword } = request.body;
+  if (!email || !token || !newPassword || newPassword.length < 10) return response.status(400).json({ message: 'Datos incompletos o contraseña muy corta.' });
+  const pool = await getPool();
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const result = await pool.request().input('email', sql.NVarChar(254), email).input('token', sql.Char(64), tokenHash)
+    .query('SELECT UserId, ResetTokenExpiresAt FROM dbo.UserOrganizations WHERE Email = @email AND ResetToken = @token AND IsActive = 1;');
+  const user = result.recordset[0];
+  if (!user || new Date(user.ResetTokenExpiresAt) < new Date()) {
+    return response.status(400).json({ message: 'Token inválido o expirado.' });
+  }
+  const passwordHash = await crypto.promises.pbkdf2(newPassword, crypto.randomBytes(16), 100000, 64, 'sha512').then(h => h.toString('hex'));
+  await pool.request().input('userId', sql.NVarChar(450), user.UserId).input('hash', sql.VarChar(255), passwordHash)
+    .query('UPDATE dbo.UserOrganizations SET PasswordHash = @hash, ResetToken = NULL, ResetTokenExpiresAt = NULL WHERE UserId = @userId;');
+  response.json({ message: 'Contraseña actualizada correctamente.' });
 });
 
 app.get('/api/health', async (_request, response) => {
@@ -455,16 +551,26 @@ app.get('/api/companies', requirePermission('Empresas', 'Ver empresas'), async (
   }
 });
 
+// B-15/S-05: Validar RNC dominicano (9 u 11 dígitos, solo numericos — DGII / Ley 253-12)
+function validateRnc(rnc) {
+  if (!rnc) return false;
+  const digits = rnc.replace(/[^0-9]/g, '');
+  return digits.length === 9 || digits.length === 11;
+}
+
 app.post('/api/companies', requireGlobalAdmin, async (request, response) => {
   const { name, rnc, email, phone, address, status } = request.body;
   if (!name?.trim() || !rnc?.trim() || !email?.trim()) {
     return response.status(400).json({ message: 'Nombre, RNC y email son obligatorios.' });
   }
+  if (!validateRnc(rnc)) {
+    return response.status(400).json({ message: 'El RNC debe tener 9 u 11 dígitos numéricos (formato DGII).' });
+  }
   try {
     const pool = await getPool();
     const result = await pool.request()
       .input('name', sql.NVarChar(150), name.trim())
-      .input('rnc', sql.VarChar(20), rnc.trim())
+      .input('rnc', sql.VarChar(20), rnc.replace(/[^0-9]/g, ''))
       .input('email', sql.NVarChar(254), email.trim())
       .input('phone', sql.NVarChar(30), phone?.trim() || null)
       .input('address', sql.NVarChar(300), address?.trim() || null)
@@ -709,12 +815,17 @@ app.post('/api/finance/transactions', requirePermission('Finanzas', 'Registrar t
 });
 
 app.get('/api/finance/transactions', requirePermission('Finanzas', 'Ver finanzas'), async (request, response) => {
-  const result = await (await getPool()).request().input('companyId', sql.Int, request.user.companyId).input('isGlobal', sql.Bit, isGlobalAdmin(request)).query(`
-    SELECT TOP 100 t.Id AS id, t.TransactionType AS type, t.Category AS category, t.Description AS description,
-           t.Amount AS amount, t.TaxAmount AS taxAmount, t.DueDate AS dueDate, t.Status AS status, t.CreatedAt AS createdAt
-    FROM dbo.FinanceTransactions AS t WHERE (@isGlobal = 1 OR t.CompanyId = @companyId) ORDER BY t.CreatedAt DESC;
-  `);
-  response.json(result.recordset);
+  try {
+    const result = await (await getPool()).request().input('companyId', sql.Int, request.user.companyId).input('isGlobal', sql.Bit, isGlobalAdmin(request)).query(`
+      SELECT TOP 100 t.Id AS id, t.TransactionType AS type, t.Category AS category, t.Description AS description,
+             t.Amount AS amount, t.TaxAmount AS taxAmount, t.DueDate AS dueDate, t.Status AS status, t.CreatedAt AS createdAt
+      FROM dbo.FinanceTransactions AS t WHERE (@isGlobal = 1 OR t.CompanyId = @companyId) ORDER BY t.CreatedAt DESC;
+    `);
+    response.json(result.recordset);
+  } catch (error) {
+    console.error('Finance transactions query failed:', error.message);
+    response.status(500).json({ message: 'No fue posible cargar las transacciones.' });
+  }
 });
 
 app.patch('/api/finance/transactions/:id/status', requirePermission('Finanzas', 'Registrar transacciones'), async (request, response) => {
@@ -734,11 +845,16 @@ app.patch('/api/finance/transactions/:id/status', requirePermission('Finanzas', 
 });
 
 app.get('/api/finance/contacts', requirePermission('Finanzas', 'Ver finanzas'), async (request, response) => {
-  const result = await (await getPool()).request().input('companyId', sql.Int, request.user.companyId).input('isGlobal', sql.Bit, isGlobalAdmin(request)).query(`
-    SELECT Id AS id, ContactType AS type, Name AS name, TaxId AS taxId, Email AS email, Phone AS phone, IsActive AS isActive
-    FROM dbo.FinanceContacts WHERE IsActive = 1 AND (@isGlobal = 1 OR CompanyId = @companyId) ORDER BY Name;
-  `);
-  response.json(result.recordset);
+  try {
+    const result = await (await getPool()).request().input('companyId', sql.Int, request.user.companyId).input('isGlobal', sql.Bit, isGlobalAdmin(request)).query(`
+      SELECT Id AS id, ContactType AS type, Name AS name, TaxId AS taxId, Email AS email, Phone AS phone, IsActive AS isActive
+      FROM dbo.FinanceContacts WHERE IsActive = 1 AND (@isGlobal = 1 OR CompanyId = @companyId) ORDER BY Name;
+    `);
+    response.json(result.recordset);
+  } catch (error) {
+    console.error('Finance contacts query failed:', error.message);
+    response.status(500).json({ message: 'No fue posible cargar los contactos.' });
+  }
 });
 
 app.post('/api/finance/contacts', requirePermission('Finanzas', 'Registrar transacciones'), async (request, response) => {
@@ -754,26 +870,33 @@ app.post('/api/finance/contacts', requirePermission('Finanzas', 'Registrar trans
 });
 
 app.get('/api/finance/invoices', requirePermission('Finanzas', 'Ver finanzas'), async (request, response) => {
-  const result = await (await getPool()).request().input('companyId', sql.Int, request.user.companyId).input('isGlobal', sql.Bit, isGlobalAdmin(request)).query(`
-    SELECT TOP 100 i.Id AS id, i.InvoiceNumber AS number, i.InvoiceType AS type, i.IssueDate AS issueDate, i.DueDate AS dueDate,
-           i.Subtotal AS subtotal, i.TaxAmount AS taxAmount, i.Total AS total, i.Status AS status, c.Name AS contact
-    FROM dbo.FinanceInvoices AS i LEFT JOIN dbo.FinanceContacts AS c ON c.Id = i.ContactId
-    WHERE (@isGlobal = 1 OR i.CompanyId = @companyId) ORDER BY i.CreatedAt DESC;
-  `);
-  response.json(result.recordset);
+  try {
+    const result = await (await getPool()).request().input('companyId', sql.Int, request.user.companyId).input('isGlobal', sql.Bit, isGlobalAdmin(request)).query(`
+      SELECT TOP 100 i.Id AS id, i.InvoiceNumber AS number, i.Ncf AS ncf, i.InvoiceType AS type, i.IssueDate AS issueDate, i.DueDate AS dueDate,
+             i.Subtotal AS subtotal, i.TaxAmount AS taxAmount, i.Total AS total, i.Status AS status, c.Name AS contact
+      FROM dbo.FinanceInvoices AS i LEFT JOIN dbo.FinanceContacts AS c ON c.Id = i.ContactId
+      WHERE (@isGlobal = 1 OR i.CompanyId = @companyId) ORDER BY i.CreatedAt DESC;
+    `);
+    response.json(result.recordset);
+  } catch (error) {
+    console.error('Finance invoices query failed:', error.message);
+    response.status(500).json({ message: 'No fue posible cargar las facturas.' });
+  }
 });
 
 app.post('/api/finance/invoices', requirePermission('Finanzas', 'Registrar transacciones'), async (request, response) => {
-  const { number, type, contactId, subtotal, taxRate = 0, dueDate } = request.body;
+  const { number, ncf, type, contactId, subtotal, taxRate = 0, dueDate } = request.body;
   if (!number?.trim() || !['Venta', 'Compra'].includes(type) || Number(subtotal) <= 0) return response.status(400).json({ message: 'Número, tipo y subtotal válido son obligatorios.' });
+  if (ncf && ncf.trim().length > 19) return response.status(400).json({ message: 'El NCF no puede exceder 19 caracteres.' });
   const taxAmount = Number(subtotal) * Number(taxRate) / 100;
   const result = await (await getPool()).request().input('companyId', sql.Int, request.user.companyId).input('number', sql.NVarChar(50), number.trim())
+    .input('ncf', sql.NVarChar(19), ncf?.trim() || null)
     .input('type', sql.NVarChar(20), type).input('contactId', sql.Int, contactId ? Number(contactId) : null).input('subtotal', sql.Decimal(18, 2), Number(subtotal))
     .input('taxRate', sql.Decimal(9, 4), Number(taxRate)).input('taxAmount', sql.Decimal(18, 2), taxAmount).input('total', sql.Decimal(18, 2), Number(subtotal) + taxAmount)
     .input('dueDate', sql.Date, dueDate || null).input('createdBy', sql.NVarChar(450), request.user.userId)
-    .query(`INSERT INTO dbo.FinanceInvoices (CompanyId, ContactId, InvoiceNumber, InvoiceType, Subtotal, TaxRate, TaxAmount, Total, DueDate, CreatedBy)
-            OUTPUT INSERTED.Id AS id, INSERTED.InvoiceNumber AS number, INSERTED.Total AS total
-            VALUES (@companyId, @contactId, @number, @type, @subtotal, @taxRate, @taxAmount, @total, @dueDate, @createdBy);`);
+    .query(`INSERT INTO dbo.FinanceInvoices (CompanyId, ContactId, InvoiceNumber, Ncf, InvoiceType, Subtotal, TaxRate, TaxAmount, Total, DueDate, CreatedBy)
+            OUTPUT INSERTED.Id AS id, INSERTED.InvoiceNumber AS number, INSERTED.Ncf AS ncf, INSERTED.Total AS total
+            VALUES (@companyId, @contactId, @number, @ncf, @type, @subtotal, @taxRate, @taxAmount, @total, @dueDate, @createdBy);`);
   response.status(201).json(result.recordset[0]);
 });
 
@@ -797,12 +920,17 @@ app.post('/api/finance/bank-transactions/:id/reconcile', requirePermission('Fina
 });
 
 app.get('/api/finance/bank-transactions', requirePermission('Finanzas', 'Ver finanzas'), async (request, response) => {
-  const result = await (await getPool()).request().input('companyId', sql.Int, request.user.companyId).input('isGlobal', sql.Bit, isGlobalAdmin(request)).query(`
-    SELECT TOP 100 Id AS id, TransactionDate AS transactionDate, Description AS description, Amount AS amount,
-           Reference AS reference, Status AS status FROM dbo.FinanceBankTransactions
-    WHERE (@isGlobal = 1 OR CompanyId = @companyId) ORDER BY TransactionDate DESC, Id DESC;
-  `);
-  response.json(result.recordset);
+  try {
+    const result = await (await getPool()).request().input('companyId', sql.Int, request.user.companyId).input('isGlobal', sql.Bit, isGlobalAdmin(request)).query(`
+      SELECT TOP 100 Id AS id, TransactionDate AS transactionDate, Description AS description, Amount AS amount,
+             Reference AS reference, Status AS status FROM dbo.FinanceBankTransactions
+      WHERE (@isGlobal = 1 OR CompanyId = @companyId) ORDER BY TransactionDate DESC, Id DESC;
+    `);
+    response.json(result.recordset);
+  } catch (error) {
+    console.error('Finance bank transactions query failed:', error.message);
+    response.status(500).json({ message: 'No fue posible cargar los movimientos bancarios.' });
+  }
 });
 
 app.post('/api/finance/bank-transactions', requirePermission('Finanzas', 'Registrar transacciones'), async (request, response) => {
@@ -820,9 +948,16 @@ app.post('/api/finance/bank-transactions', requirePermission('Finanzas', 'Regist
 app.get('/api/users', requirePermission('Usuarios', 'Ver usuarios'), async (request, response) => {
   try {
     const pool = await getPool();
+    // B-08: paginación real de usuarios
+    const page = Math.max(Number(request.query.page) || 1, 1);
+    const pageSize = Math.min(Math.max(Number(request.query.pageSize) || 20, 1), 100);
+    const statusFilter = String(request.query.status || '').trim();
     const result = await pool.request()
       .input('companyId', sql.Int, request.user.companyId || null)
       .input('isGlobal', sql.Bit, isGlobalAdmin(request))
+      .input('offset', sql.Int, (page - 1) * pageSize)
+      .input('pageSize', sql.Int, pageSize)
+      .input('statusFilter', sql.NVarChar(10), statusFilter || null)
       .query(`
       SELECT u.UserId AS id,
              CONCAT(u.FirstName, N' ', u.LastName) AS name,
@@ -847,9 +982,28 @@ app.get('/api/users', requirePermission('Usuarios', 'Ver usuarios'), async (requ
       ) AS r
         WHERE (@isGlobal = 1 OR u.CompanyId = @companyId)
           AND (@isGlobal = 1 OR COALESCE(r.Name, N'') <> N'Super Admin')
-      ORDER BY u.LastName, u.FirstName;
+          AND (@statusFilter IS NULL OR (CASE WHEN u.IsActive = 1 THEN N'Activa' ELSE N'Inactiva' END) = @statusFilter)
+      ORDER BY u.LastName, u.FirstName
+      OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY;
+
+      SELECT COUNT_BIG(*) AS total
+      FROM dbo.UserOrganizations AS u
+      INNER JOIN dbo.Companies AS c ON c.Id = u.CompanyId
+      OUTER APPLY (
+        SELECT TOP 1 r.Name FROM dbo.UserRoles AS ur
+        INNER JOIN dbo.Roles AS r ON r.Id = ur.RoleId
+        WHERE ur.UserId = u.UserId ORDER BY r.Name
+      ) AS r
+      WHERE (@isGlobal = 1 OR u.CompanyId = @companyId)
+        AND (@isGlobal = 1 OR COALESCE(r.Name, N'') <> N'Super Admin')
+        AND (@statusFilter IS NULL OR (CASE WHEN u.IsActive = 1 THEN N'Activa' ELSE N'Inactiva' END) = @statusFilter);
     `);
-    response.json(result.recordset);
+    response.json({
+      data: result.recordsets[0],
+      total: Number(result.recordsets[1][0].total),
+      page,
+      pageSize
+    });
   } catch (error) {
     console.error('Users query failed:', error.message);
     response.status(500).json({ message: 'No fue posible cargar los usuarios.' });
@@ -876,7 +1030,7 @@ app.post('/api/users', requirePermission('Usuarios', 'Crear usuarios'), async (r
       const lookupResult = await lookup.query(`
         SELECT TOP 1 c.Id AS companyId,
           (SELECT TOP 1 b.Id FROM dbo.Branches b WHERE b.CompanyId = c.Id AND b.Name = @branchName) AS branchId,
-          (SELECT TOP 1 r.Id FROM dbo.Roles r WHERE r.Name = @roleName AND r.IsActive = 1) AS roleId
+          (SELECT TOP 1 r.Id FROM dbo.Roles r WHERE (r.Name = @roleName OR (r.Name = N'Employee' AND @roleName IN (N'Empleado', N'Employee')) OR (r.Name = N'Company Admin' AND @roleName IN (N'Administrador', N'Administrador de Empresa', N'Company Admin'))) AND r.IsActive = 1) AS roleId
         FROM dbo.Companies c WHERE c.Name = @companyName;
       `);
       const organization = lookupResult.recordset[0];
@@ -997,17 +1151,19 @@ app.get('/api/branches', requirePermission('Sucursales', 'Ver sucursales'), asyn
   }
 });
 
-app.get('/api/roles', requireRoleAdministration, async (_request, response) => {
+app.get('/api/roles', requireRoleAdministration, async (request, response) => {
   try {
     const pool = await getPool();
     const result = await pool.request()
-      .input('isGlobal', sql.Bit, isGlobalAdmin(_request))
+      .input('isGlobal', sql.Bit, isGlobalAdmin(request))
+      .input('companyId', sql.Int, request.user.companyId || null)
       .query(`
       SELECT r.Id AS id, r.Name AS name, r.Description AS description,
              r.RoleType AS type, COUNT(ur.UserId) AS userCount
       FROM dbo.Roles AS r
       LEFT JOIN dbo.UserRoles AS ur ON ur.RoleId = r.Id
-      WHERE r.IsActive = 1 AND (@isGlobal = 1 OR r.Name <> N'Super Admin')
+      WHERE r.IsActive = 1
+        AND (@isGlobal = 1 OR r.Name <> N'Super Admin')
       GROUP BY r.Id, r.Name, r.Description, r.RoleType
       ORDER BY r.Name;
     `);
@@ -1104,6 +1260,48 @@ app.get('/api/audit', requirePermission('Auditoría', 'Ver auditoría'), async (
   }
 });
 
+// M-07: Exportación de auditoría a CSV
+app.get('/api/audit/export', requirePermission('Auditoría', 'Ver auditoría'), async (request, response) => {
+  try {
+    const pool = await getPool();
+    const query = String(request.query.search || '').trim();
+    const moduleName = String(request.query.module || '').trim();
+    const actionName = String(request.query.action || '').trim();
+    const auditRequest = pool.request()
+      .input('search', sql.NVarChar(200), `%${query}%`)
+      .input('module', sql.NVarChar(80), moduleName || null)
+      .input('action', sql.NVarChar(40), actionName || null)
+      .input('companyId', sql.Int, request.user.companyId || null)
+      .input('isGlobal', sql.Bit, isGlobalAdmin(request));
+    const result = await auditRequest.query(`
+      SELECT a.Id AS id, a.CreatedAt, a.ActionName AS action,
+             a.ModuleName AS module, a.EntityName AS entity,
+             a.EntityId AS record, a.IpAddress AS ip,
+             COALESCE(CONCAT(u.FirstName, N' ', u.LastName), N'Sistema') AS userName
+      FROM dbo.AuditLogs AS a
+      LEFT JOIN dbo.UserOrganizations AS u ON u.UserId = a.UserId
+      WHERE (@isGlobal = 1 OR a.CompanyId = @companyId)
+        AND (@search = '%%' OR CONCAT(COALESCE(u.FirstName, N''), N' ', COALESCE(u.LastName, N''), N' ', COALESCE(a.EntityId, N'')) LIKE @search)
+        AND (@module IS NULL OR a.ModuleName = @module)
+        AND (@action IS NULL OR a.ActionName = @action)
+      ORDER BY a.CreatedAt DESC;
+    `);
+    const rows = result.recordset;
+    const header = 'ID,Fecha,Usuario,Acción,Módulo,Entidad,Registro,IP\n';
+    const csvEscape = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const csv = header + rows.map(r =>
+      [r.id, r.CreatedAt?.toISOString() ?? '', r.userName, r.action, r.module, r.entity, r.record, r.ip]
+        .map(csvEscape).join(',')
+    ).join('\n');
+    response.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    response.setHeader('Content-Disposition', `attachment; filename="auditoria-${new Date().toISOString().slice(0, 10)}.csv"`);
+    response.send('\uFEFF' + csv); // BOM para Excel
+  } catch (error) {
+    console.error('Audit export failed:', error.message);
+    response.status(500).json({ message: 'No fue posible exportar la auditoría.' });
+  }
+});
+
 app.patch('/api/companies/:id/status', requireGlobalAdmin, async (request, response) => {
   const isActive = request.body?.isActive;
   if (typeof isActive !== 'boolean') return response.status(400).json({ message: 'isActive debe ser booleano.' });
@@ -1123,6 +1321,7 @@ app.patch('/api/companies/:id/status', requireGlobalAdmin, async (request, respo
 app.put('/api/companies/:id', requireGlobalAdmin, async (request, response) => {
   const { name, rnc, email, phone, address } = request.body;
   if (!name?.trim() || !rnc?.trim() || !email?.trim()) return response.status(400).json({ message: 'Nombre, RNC y email son obligatorios.' });
+  if (!validateRnc(rnc)) return response.status(400).json({ message: 'El RNC debe tener 9 u 11 dígitos numéricos (formato DGII).' });
   try {
     const pool = await getPool();
     const result = await pool.request().input('id', sql.Int, Number(request.params.id))
@@ -1209,6 +1408,61 @@ app.post('/api/branches', requirePermission('Sucursales', 'Crear sucursales'), a
   }
 });
 
+// M-01: Edición de sucursal
+app.put('/api/branches/:id', requirePermission('Sucursales', 'Editar sucursales'), async (request, response) => {
+  const { name, code, address, phone, email, managerUserId } = request.body;
+  if (!name?.trim() || !code?.trim()) {
+    return response.status(400).json({ message: 'Nombre y código son obligatorios.' });
+  }
+  try {
+    const pool = await getPool();
+    const result = await pool.request()
+      .input('id', sql.Int, Number(request.params.id))
+      .input('companyId', sql.Int, request.user.companyId || null)
+      .input('isGlobal', sql.Bit, isGlobalAdmin(request))
+      .input('name', sql.NVarChar(150), name.trim())
+      .input('code', sql.NVarChar(30), code.trim())
+      .input('address', sql.NVarChar(300), address?.trim() || null)
+      .input('phone', sql.NVarChar(30), phone?.trim() || null)
+      .input('email', sql.NVarChar(254), email?.trim() || null)
+      .input('managerUserId', sql.NVarChar(450), managerUserId?.trim() || null)
+      .query(`UPDATE dbo.Branches
+              SET Name = @name, Code = @code, Address = @address, Phone = @phone,
+                  Email = @email, ManagerUserId = @managerUserId, UpdatedAt = SYSUTCDATETIME()
+              OUTPUT INSERTED.Id AS id, INSERTED.Name AS name, INSERTED.Code AS code
+              WHERE Id = @id AND (@isGlobal = 1 OR CompanyId = @companyId);`);
+    if (!result.recordset[0]) return response.status(404).json({ message: 'Sucursal no encontrada.' });
+    await writeAudit(request, 'UPDATE', 'Sucursales', 'Branch', request.params.id);
+    response.json(result.recordset[0]);
+  } catch (error) {
+    console.error('Branch update failed:', error.message);
+    response.status(error.number === 2627 ? 409 : 500).json({ message: error.number === 2627 ? 'Ese código ya existe para la empresa.' : 'No fue posible actualizar la sucursal.' });
+  }
+});
+
+// M-01: Activar / desactivar sucursal (eliminación lógica)
+app.patch('/api/branches/:id/status', requirePermission('Sucursales', 'Editar sucursales'), async (request, response) => {
+  const isActive = request.body?.isActive;
+  if (typeof isActive !== 'boolean') return response.status(400).json({ message: 'isActive debe ser booleano.' });
+  try {
+    const pool = await getPool();
+    const result = await pool.request()
+      .input('id', sql.Int, Number(request.params.id))
+      .input('isActive', sql.Bit, isActive)
+      .input('companyId', sql.Int, request.user.companyId || null)
+      .input('isGlobal', sql.Bit, isGlobalAdmin(request))
+      .query(`UPDATE dbo.Branches SET IsActive = @isActive, UpdatedAt = SYSUTCDATETIME()
+              OUTPUT INSERTED.Id AS id, INSERTED.IsActive AS isActive
+              WHERE Id = @id AND (@isGlobal = 1 OR CompanyId = @companyId);`);
+    if (!result.recordset[0]) return response.status(404).json({ message: 'Sucursal no encontrada.' });
+    await writeAudit(request, isActive ? 'ACTIVATE' : 'DEACTIVATE', 'Sucursales', 'Branch', request.params.id);
+    response.json(result.recordset[0]);
+  } catch (error) {
+    console.error('Branch status update failed:', error.message);
+    response.status(500).json({ message: 'No fue posible actualizar la sucursal.' });
+  }
+});
+
 app.post('/api/roles', requireRoleAdministration, async (request, response) => {
   const { name, description, roleType = 'Personalizado' } = request.body;
   if (!name?.trim()) return response.status(400).json({ message: 'El nombre del rol es obligatorio.' });
@@ -1233,7 +1487,7 @@ app.post('/api/roles', requireRoleAdministration, async (request, response) => {
 app.use((_request, response) => {
   if (_request.path.startsWith('/api/')) return response.status(404).json({ message: 'Ruta API no encontrada.' });
   if (path.extname(_request.path)) return response.status(404).send('Not found');
-  response.sendFile(path.join(__dirname, 'index.html'));
+  response.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 ensureOperationsSchema().then(() => {
