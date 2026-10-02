@@ -33,6 +33,7 @@ Kinetix/
 
 | Documento | Ubicación | Uso |
 |---|---|---|
+| Guía de inicialización | [GUIA_INICIALIZACION.md](GUIA_INICIALIZACION.md) | Paso a paso detallado para instalación, base de datos y arranque |
 | Frontend | [app.js](app.js) | Estado, vistas, formularios y llamadas API |
 | HTML principal | [index.html](index.html) | Punto de entrada del navegador |
 | Estilos | [styles.css](styles.css) | Diseño responsive y componentes visuales |
