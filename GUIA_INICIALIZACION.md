@@ -102,6 +102,18 @@ sqlcmd -S "(localdb)\MSSQLLocalDB" -i "database\kinetix_core.sql"
 3. Abre el archivo `database/kinetix_core.sql`.
 4. Ejecuta el script (**F5**).
 
+#### Paso 3.1: Aplicación de Migraciones (Auditoría y Recursos Humanos)
+
+El sistema cuenta con un motor de migraciones idempotentes que se ejecuta automáticamente al iniciar el servidor, o manualmente mediante:
+
+```powershell
+node scripts/run-migrations.mjs
+```
+
+Esto aplicará:
+- `database/migrations/001_core_audit_hardening.sql`: Trigger `TR_AuditLogs_Immutable`, índices y acciones extendidas.
+- `database/migrations/002_hr_core.sql`: Tablas, catálogos, roles de referencia y funciones de visibilidad de RRHH.
+
 ---
 
 ### Paso 4: Creación de Usuarios Iniciales
@@ -126,14 +138,25 @@ node scripts/create-super-admin.mjs
 
 ---
 
-### Paso 5: Verificación del Código
+### Paso 5: Verificación del Código y Pruebas Automatizadas
 
-Antes de lanzar el servidor, puedes ejecutar la verificación de sintaxis en `server.js` y `app.js`:
+Antes de lanzar el servidor, puedes ejecutar la verificación de sintaxis y la suite de pruebas unitarias/integración de Recursos Humanos:
 
 ```bash
+# Verificación de sintaxis general
 npm run check
 node --check app.js
+
+# Suite de pruebas automatizadas del Módulo de RRHH (Fase 1)
+node scripts/test-hr-phase1.mjs
+
+# Suite de pruebas automatizadas del Módulo de RRHH (Fase 2: Asistencia, Vacaciones, Aprobaciones, Notificaciones)
+node scripts/test-hr-phase2.mjs
 ```
+
+Esta suite valida:
+- **Fase 1**: Cédula Dominicana (Luhn / Módulo 10), inmutabilidad de auditoría (`UPDATE`/`DELETE` bloqueados), correlativo atómico `EMP-00001`, ciclos jerárquicos y enmascaramiento salarial.
+- **Fase 2**: Registro de entradas/salidas con tolerancia y detección de tardanzas, horas regulares y extras, escala legal dominicana de vacaciones (Art. 177: 14 y 18 días), motor de aprobación multietapa con fallback, deducción automática de balance y sistema de notificaciones in-app.
 
 ---
 

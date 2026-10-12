@@ -2,9 +2,74 @@ import { state } from './state.js';
 import { loadData, runGlobalSearch, saveEntityForm, saveBranchForm } from './api.js';
 import { toast, escapeHtml } from '../components/utils.js';
 import { showModal, showRoleModal } from '../components/ui.js';
+import { bindHr } from '../views/hr/hr.events.js';
+import {
+  loadHrDashboard,
+  loadHrEmployees,
+  loadHrDepartments,
+  loadHrPositions,
+  loadHrCatalogs,
+  loadHrOrgChart,
+  loadTodayAttendance,
+  loadHrShifts,
+  loadAttendanceList,
+  loadVacationBalance,
+  loadVacationRequests,
+  loadLeaveTypes,
+  loadLeaveRequests,
+  loadVacationCalendar,
+  loadPendingApprovals,
+  loadMyApprovalRequests,
+  loadUnreadNotificationsCount
+} from '../views/hr/hr.api.js';
+
+export async function loadHrViewData(view) {
+  if (view === 'hr-dashboard') {
+    await loadHrDashboard();
+  } else if (view === 'hr-employees') {
+    await Promise.all([loadHrEmployees(), loadHrDepartments()]);
+  } else if (view === 'hr-employee-form') {
+    if (!state.hr.editMode) state.hr.currentEmployee = null;
+    await Promise.all([loadHrDepartments(), loadHrPositions(), loadHrCatalogs(), loadHrEmployees()]);
+  } else if (view === 'hr-departments') {
+    await Promise.all([loadHrDepartments(), loadHrEmployees()]);
+  } else if (view === 'hr-positions') {
+    await Promise.all([loadHrDepartments(), loadHrPositions()]);
+  } else if (view === 'hr-orgchart') {
+    await loadHrOrgChart();
+  } else if (view === 'hr-attendance') {
+    await Promise.all([loadTodayAttendance(), loadHrShifts(), loadAttendanceList()]);
+  } else if (view === 'hr-vacations') {
+    const now = new Date();
+    await Promise.all([
+      loadVacationBalance(),
+      loadVacationRequests(),
+      loadLeaveTypes(),
+      loadLeaveRequests(),
+      loadVacationCalendar(now.getMonth() + 1, now.getFullYear())
+    ]);
+  } else if (view === 'hr-approvals') {
+    await Promise.all([loadPendingApprovals(), loadMyApprovalRequests()]);
+  }
+}
 
 export function bind(renderFn) {
-  document.querySelectorAll('[data-nav]').forEach(button => button.addEventListener('click', () => { state.view = button.dataset.nav; state.query = ''; state.detail = null; renderFn(); }));
+  document.querySelectorAll('[data-nav]').forEach(button => button.addEventListener('click', async () => {
+    state.view = button.dataset.nav;
+    state.query = '';
+    state.detail = null;
+    if (state.view === 'hr-employee-form' && !state.hr.editMode) {
+      state.hr.currentEmployee = null;
+    }
+    if (state.view.startsWith('hr-')) {
+      try {
+        await loadHrViewData(state.view);
+      } catch (err) {
+        toast(err.message);
+      }
+    }
+    renderFn();
+  }));
   document.querySelectorAll('[data-detail]').forEach(button => button.addEventListener('click', () => { state.detail = button.dataset.detail === 'user' ? button.dataset.id : Number(button.dataset.id); state.view = `${button.dataset.detail}-detail`; state.tab = 'Información'; renderFn(); }));
   document.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => { state.tab = button.dataset.tab; renderFn(); }));
   document.querySelectorAll('[data-page]').forEach(button => button.addEventListener('click', async () => { state.companiesPage = Number(button.dataset.page); try { await loadData(); renderFn(); } catch (error) { toast(error.message); } }));
@@ -117,6 +182,8 @@ export function bind(renderFn) {
     event.preventDefault();
     try { await saveBranchForm(branchFormElement, renderFn); } catch (error) { toast(error.message); }
   });
+
+  bindHr(renderFn);
 }
 
 export async function handleAction(action, button, renderFn) {

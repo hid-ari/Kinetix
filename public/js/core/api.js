@@ -93,6 +93,14 @@ export async function loadData() {
     contacts: await financeContactsResponse.json(),
     bank: await financeBankResponse.json()
   };
+
+  try {
+    const notifRes = await fetch('/api/hr/notifications/unread-count', { credentials: 'include' });
+    if (notifRes.ok) {
+      const nd = await notifRes.json();
+      state.hr.unreadNotificationsCount = nd.unreadCount || 0;
+    }
+  } catch {}
 }
 
 export function runGlobalSearch(renderFn) {

@@ -1,5 +1,5 @@
 import { state } from '../../core/state.js';
-import { escapeHtml, badge } from '../../components/utils.js';
+import { escapeHtml, badge, initials as getInitials } from '../../components/utils.js';
 import { breadcrumb, pageHeader } from '../../components/ui.js';
 
 export function myCompany() {
@@ -192,13 +192,120 @@ export function companies() {
   const start = state.companiesTotal ? ((state.companiesPage - 1) * state.companiesPageSize) + 1 : 0;
   const end = start ? Math.min(start + items.length - 1, state.companiesTotal) : 0;
   const pageCount = Math.max(Math.ceil(state.companiesTotal / state.companiesPageSize), 1);
-  return `${breadcrumb([['dashboard', 'Administración'], ['companies', 'Empresas']])}${pageHeader('Empresas', 'Administra las organizaciones y su estado de acceso.', '<button class="primary" data-action="new-company">＋ Nueva empresa</button>')}<div class="panel"><div class="table-toolbar"><div class="filter-row"><input id="page-search" placeholder="Buscar por nombre o RNC" value="${escapeHtml(state.query)}"><select><option>Todos los estados</option><option>Activa</option><option>Inactiva</option></select></div><span class="panel-note">${state.companiesTotal} empresas encontradas</span></div><div class="table-wrap"><table><thead><tr><th>Empresa</th><th>RNC</th><th>Usuarios</th><th>Sucursales</th><th>Estado</th><th>Alta</th><th></th></tr></thead><tbody>${items.length ? items.map(c => `<tr><td><strong>${escapeHtml(c.name)}</strong><br><span class="panel-note">${escapeHtml(c.email)}</span></td><td>${escapeHtml(c.rnc)}</td><td>${c.users}</td><td>${c.branches}</td><td>${badge(c.status)}</td><td>${c.date}</td><td><button class="row-action" data-detail="company" data-id="${c.id}">Ver detalle</button></td></tr>`).join('') : '<tr><td colspan="7" class="empty">No encontramos empresas con esa búsqueda.</td></tr>'}</tbody></table></div><div class="pagination"><span>Mostrando ${start}-${end} de ${state.companiesTotal} registros</span><div class="pages">${Array.from({ length: pageCount }, (_, index) => `<button class="${index + 1 === state.companiesPage ? 'active' : ''}" data-page="${index + 1}">${index + 1}</button>`).join('')}</div></div></div>`;
+  return `
+    ${breadcrumb([['dashboard', 'Administración'], ['companies', 'Empresas']])}
+    ${pageHeader('Empresas', 'Administra las organizaciones y su estado de acceso.', '<button class="primary" data-action="new-company">＋ Nueva empresa</button>')}
+    <div class="panel">
+      <div class="table-toolbar">
+        <div class="filter-row">
+          <input id="page-search" placeholder="Buscar por nombre o RNC..." value="${escapeHtml(state.query)}" style="min-width:260px;">
+          <select>
+            <option>Todos los estados</option>
+            <option>Activa</option>
+            <option>Inactiva</option>
+          </select>
+        </div>
+        <span class="panel-note">${state.companiesTotal} empresas registradas</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Empresa</th>
+              <th>RNC</th>
+              <th>Usuarios</th>
+              <th>Sucursales</th>
+              <th>Estado</th>
+              <th>Fecha de Alta</th>
+              <th style="text-align:right;">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.length ? items.map(c => {
+              const cInitials = getInitials(c.name || 'Empresa');
+              return `
+                <tr>
+                  <td>
+                    <div class="emp-cell-flex">
+                      <div class="emp-avatar-sm" style="width:34px;height:34px;font-size:11.5px;background:linear-gradient(135deg,#0284c7 0%,#0369a1 100%);">
+                        ${escapeHtml(cInitials)}
+                      </div>
+                      <div class="emp-cell-info">
+                        <strong>${escapeHtml(c.name)}</strong>
+                        <small>${escapeHtml(c.email)}</small>
+                      </div>
+                    </div>
+                  </td>
+                  <td><span class="folio-tag">${escapeHtml(c.rnc)}</span></td>
+                  <td><strong style="font-variant-numeric:tabular-nums;">${c.users}</strong></td>
+                  <td><strong style="font-variant-numeric:tabular-nums;">${c.branches}</strong></td>
+                  <td>${badge(c.status)}</td>
+                  <td><span style="font-variant-numeric:tabular-nums; color:var(--muted);">${c.date}</span></td>
+                  <td style="text-align:right;">
+                    <button class="row-action" data-detail="company" data-id="${c.id}">Ver detalle →</button>
+                  </td>
+                </tr>
+              `;
+            }).join('') : '<tr><td colspan="7" class="empty">No encontramos empresas con esa búsqueda.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <span>Mostrando ${start}-${end} de ${state.companiesTotal} registros</span>
+        <div class="pages">
+          ${Array.from({ length: pageCount }, (_, index) => `
+            <button class="${index + 1 === state.companiesPage ? 'active' : ''}" data-page="${index + 1}">${index + 1}</button>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 export function companyDetail(id) {
   const c = state.companies.find(x => String(x.id) === String(id));
   if (!c) return '<div class="empty">Empresa no encontrada.</div>';
-  return `${breadcrumb([['dashboard', 'Administración'], ['companies', 'Empresas'], ['companies', escapeHtml(c.name)]])}<div class="detail-head"><div><h1>${escapeHtml(c.name)}</h1><p class="subtitle">RNC ${escapeHtml(c.rnc)} · ${badge(c.status)}</p></div><div class="inline-actions"><button class="secondary" data-action="edit-company">Editar</button><button class="${c.status === 'Activa' ? 'danger' : 'primary'}" data-action="toggle-company">${c.status === 'Activa' ? 'Desactivar' : 'Activar'}</button></div></div><div class="detail-summary"><div><strong>${c.users}</strong><span>Usuarios totales</span></div><div><strong>${c.branches}</strong><span>Sucursales</span></div><div><strong>${c.activeUsers ?? 0}</strong><span>Usuarios activos</span></div><div><strong>${c.inactiveUsers ?? 0}</strong><span>Usuarios inactivos</span></div></div><div class="detail-tabs">${['Información', 'Usuarios', 'Sucursales', 'Auditoría'].map(t => `<button class="${state.tab === t ? 'active' : ''}" data-tab="${t}">${t}</button>`).join('')}</div><div class="panel"><div class="panel-body">${state.tab === 'Información' ? `<h2>Información general</h2><div class="form-grid" style="margin-top:18px"><div><span class="panel-note">Email de contacto</span><p>${escapeHtml(c.email)}</p></div><div><span class="panel-note">Fecha de creación</span><p>${c.date}</p></div><div><span class="panel-note">Estado de cuenta</span><p>${badge(c.status)}</p></div></div>` : `<h2>${escapeHtml(state.tab)}</h2><p class="subtitle" style="margin-top:10px">Contenido cargado bajo demanda para ${escapeHtml(c.name)}.</p></div>`}</div>`;
+  return `
+    ${breadcrumb([['dashboard', 'Administración'], ['companies', 'Empresas'], ['companies', escapeHtml(c.name)]])}
+    <div class="detail-head">
+      <div>
+        <h1>${escapeHtml(c.name)}</h1>
+        <p class="subtitle">RNC ${escapeHtml(c.rnc)} · ${badge(c.status)}</p>
+      </div>
+      <div class="inline-actions">
+        <button class="secondary" data-action="edit-company">Editar</button>
+        <button class="${c.status === 'Activa' ? 'danger' : 'primary'}" data-action="toggle-company">
+          ${c.status === 'Activa' ? 'Desactivar' : 'Activar'}
+        </button>
+      </div>
+    </div>
+    <div class="detail-summary">
+      <div><strong>${c.users}</strong><span>Usuarios totales</span></div>
+      <div><strong>${c.branches}</strong><span>Sucursales</span></div>
+      <div><strong>${c.activeUsers ?? 0}</strong><span>Usuarios activos</span></div>
+      <div><strong>${c.inactiveUsers ?? 0}</strong><span>Usuarios inactivos</span></div>
+    </div>
+    <div class="detail-tabs">
+      ${['Información', 'Usuarios', 'Sucursales', 'Auditoría'].map(t => `
+        <button class="${state.tab === t ? 'active' : ''}" data-tab="${t}">${t}</button>
+      `).join('')}
+    </div>
+    <div class="panel">
+      <div class="panel-body">
+        ${state.tab === 'Información' ? `
+          <h2>Información general</h2>
+          <div class="form-grid" style="margin-top:18px">
+            <div><span class="panel-note">Email de contacto</span><p><strong>${escapeHtml(c.email)}</strong></p></div>
+            <div><span class="panel-note">Fecha de creación</span><p><strong>${c.date}</strong></p></div>
+            <div><span class="panel-note">Estado de cuenta</span><div style="margin-top:4px;">${badge(c.status)}</div></div>
+          </div>
+        ` : `
+          <h2>${escapeHtml(state.tab)}</h2>
+          <p class="subtitle" style="margin-top:10px">Contenido cargado bajo demanda para ${escapeHtml(c.name)}.</p>
+        `}
+      </div>
+    </div>
+  `;
 }
 
 export function users() {
@@ -206,32 +313,328 @@ export function users() {
   const pageCount = Math.max(Math.ceil(state.usersTotal / state.usersPageSize), 1);
   const start = state.usersTotal ? ((state.usersPage - 1) * state.usersPageSize) + 1 : 0;
   const end = start ? Math.min(start + items.length - 1, state.usersTotal) : 0;
-  return `${breadcrumb([['dashboard', 'Administración'], ['users', 'Usuarios']])}${pageHeader('Usuarios', 'Controla identidades, roles y acceso por empresa.', '<button class="primary" data-action="new-user">＋ Nuevo usuario</button>')}<div class="panel"><div class="table-toolbar"><div class="filter-row"><input id="page-search" placeholder="Buscar nombre o email" value="${escapeHtml(state.query)}"><select data-users-status-filter><option value="">Todos los estados</option><option value="Activa" ${state.usersStatusFilter === 'Activa' ? 'selected' : ''}>Activa</option><option value="Inactiva" ${state.usersStatusFilter === 'Inactiva' ? 'selected' : ''}>Inactiva</option></select></div><span class="panel-note">${state.usersTotal} usuarios</span></div><div class="table-wrap"><table><thead><tr><th>Usuario</th><th>Empresa</th><th>Sucursal</th><th>Rol</th><th>Estado</th><th>Último acceso</th><th></th></tr></thead><tbody>${items.map(u => `<tr><td><strong>${escapeHtml(u.name)}</strong><br><span class="panel-note">${escapeHtml(u.email)}</span></td><td>${escapeHtml(u.company)}</td><td>${escapeHtml(u.branch)}</td><td>${escapeHtml(u.role)}</td><td>${badge(u.status)}</td><td>${u.last}</td><td><button class="row-action" data-detail="user" data-id="${u.id}">Ver detalle</button></td></tr>`).join('')}</tbody></table></div><div class="pagination"><span>Mostrando ${start}-${end} de ${state.usersTotal} registros</span><div class="pages">${Array.from({ length: pageCount }, (_, i) => `<button class="${i + 1 === state.usersPage ? 'active' : ''}" data-users-page="${i + 1}">${i + 1}</button>`).join('')}</div></div></div>`;
+  return `
+    ${breadcrumb([['dashboard', 'Administración'], ['users', 'Usuarios']])}
+    ${pageHeader('Usuarios', 'Controla identidades, perfiles y acceso multi-inquilino por empresa.', '<button class="primary" data-action="new-user">＋ Nuevo usuario</button>')}
+    <div class="panel">
+      <div class="table-toolbar">
+        <div class="filter-row">
+          <input id="page-search" placeholder="Buscar nombre o email..." value="${escapeHtml(state.query)}" style="min-width:260px;">
+          <select data-users-status-filter>
+            <option value="">Todos los estados</option>
+            <option value="Activa" ${state.usersStatusFilter === 'Activa' ? 'selected' : ''}>Activa</option>
+            <option value="Inactiva" ${state.usersStatusFilter === 'Inactiva' ? 'selected' : ''}>Inactiva</option>
+          </select>
+        </div>
+        <span class="panel-note">${state.usersTotal} usuarios</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Usuario</th>
+              <th>Empresa</th>
+              <th>Sucursal</th>
+              <th>Rol de Acceso</th>
+              <th>Estado</th>
+              <th>Último Acceso</th>
+              <th style="text-align:right;">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(u => {
+              const uInitials = getInitials(u.name || 'Usuario');
+              return `
+                <tr>
+                  <td>
+                    <div class="emp-cell-flex">
+                      <div class="emp-avatar-sm" style="width:34px;height:34px;font-size:11.5px;">
+                        ${escapeHtml(uInitials)}
+                      </div>
+                      <div class="emp-cell-info">
+                        <strong>${escapeHtml(u.name)}</strong>
+                        <small>${escapeHtml(u.email)}</small>
+                      </div>
+                    </div>
+                  </td>
+                  <td><strong>${escapeHtml(u.company)}</strong></td>
+                  <td>${escapeHtml(u.branch || 'Todas')}</td>
+                  <td><span class="tag-neutral">${escapeHtml(u.role)}</span></td>
+                  <td>${badge(u.status)}</td>
+                  <td><span style="font-variant-numeric:tabular-nums; color:var(--muted); font-size:12px;">${u.last}</span></td>
+                  <td style="text-align:right;">
+                    <button class="row-action" data-detail="user" data-id="${u.id}">Ver detalle →</button>
+                  </td>
+                </tr>
+              `;
+            }).join('') || '<tr><td colspan="7" class="empty">No encontramos usuarios con ese criterio.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <span>Mostrando ${start}-${end} de ${state.usersTotal} registros</span>
+        <div class="pages">
+          ${Array.from({ length: pageCount }, (_, i) => `
+            <button class="${i + 1 === state.usersPage ? 'active' : ''}" data-users-page="${i + 1}">${i + 1}</button>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 export function userDetail(id) {
   const u = state.users.find(x => String(x.id) === String(id));
   if (!u) return '<div class="empty">Usuario no encontrado.</div>';
-  return `${breadcrumb([['dashboard', 'Administración'], ['users', 'Usuarios'], ['users', u.name]])}<div class="detail-head"><div><h1>${u.name}</h1><p class="subtitle">${u.email} · ${badge(u.status)}</p></div><div class="inline-actions"><button class="secondary" data-action="edit-user">Editar</button><button class="secondary" data-action="change-password">Cambiar contraseña</button><button class="${u.status === 'Activa' ? 'danger' : 'primary'}" data-action="toggle-user">${u.status === 'Activa' ? 'Desactivar' : 'Activar'}</button></div></div><div class="grid-2"><div class="panel"><div class="panel-head"><h2>Datos de acceso</h2></div><div class="panel-body"><div class="form-grid"><div><span class="panel-note">Empresa</span><p>${u.company}</p></div><div><span class="panel-note">Sucursal</span><p>${u.branch}</p></div><div><span class="panel-note">Rol</span><p>${u.role}</p></div><div><span class="panel-note">Último acceso</span><p>${u.last}</p></div></div></div></div><div class="panel"><div class="panel-head"><h2>Actividad reciente</h2></div><div class="panel-body activity">${state.audit.filter(a => a.user === u.name).map(a => `<div class="activity-item"><span class="activity-bullet"></span><div><p>${a.action} en ${a.module}</p><small>${a.date}</small></div></div>`).join('') || '<p class="panel-note">Sin actividad reciente.</p>'}</div></div></div>`;
+  return `
+    ${breadcrumb([['dashboard', 'Administración'], ['users', 'Usuarios'], ['users', u.name]])}
+    <div class="detail-head">
+      <div>
+        <h1>${u.name}</h1>
+        <p class="subtitle">${u.email} · ${badge(u.status)}</p>
+      </div>
+      <div class="inline-actions">
+        <button class="secondary" data-action="edit-user">Editar</button>
+        <button class="secondary" data-action="change-password">Cambiar contraseña</button>
+        <button class="${u.status === 'Activa' ? 'danger' : 'primary'}" data-action="toggle-user">
+          ${u.status === 'Activa' ? 'Desactivar' : 'Activar'}
+        </button>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-head"><h2>Datos de acceso</h2></div>
+        <div class="panel-body">
+          <div class="form-grid">
+            <div><span class="panel-note">Empresa</span><p><strong>${u.company}</strong></p></div>
+            <div><span class="panel-note">Sucursal</span><p><strong>${u.branch}</strong></p></div>
+            <div><span class="panel-note">Rol</span><p><span class="tag-neutral">${u.role}</span></p></div>
+            <div><span class="panel-note">Último acceso</span><p><strong>${u.last}</strong></p></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Actividad reciente</h2></div>
+        <div class="panel-body activity">
+          ${state.audit.filter(a => a.user === u.name).map(a => `
+            <div class="activity-item">
+              <span class="activity-bullet"></span>
+              <div>
+                <p><strong>${a.action}</strong> en ${a.module}</p>
+                <small>${a.date}</small>
+              </div>
+            </div>
+          `).join('') || '<p class="panel-note">Sin actividad reciente registrada.</p>'}
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 export function branches() {
   const companyOptions = state.companies.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
-  return `${breadcrumb([['dashboard', 'Administración'], ['branches', 'Sucursales']])}${pageHeader('Sucursales', 'Consulta y organiza las sedes de tus empresas.', '<button class="primary" data-action="new-branch">＋ Nueva sucursal</button>')}<div class="panel"><div class="table-toolbar"><div class="filter-row"><input id="page-search" placeholder="Buscar sucursal o código" value="${escapeHtml(state.query)}"><select><option value="">Todas las empresas</option>${companyOptions}</select></div><span class="panel-note">${state.branches.length} sucursales</span></div><div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Código</th><th>Empresa</th><th>Encargado</th><th>Usuarios</th><th>Estado</th><th></th></tr></thead><tbody>${state.branches.filter(b => `${b.name} ${b.code}`.toLowerCase().includes(state.query.toLowerCase())).map(b => `<tr><td><strong>${escapeHtml(b.name)}</strong></td><td>${escapeHtml(b.code)}</td><td>${escapeHtml(b.company)}</td><td>${escapeHtml(b.manager)}</td><td>${b.users}</td><td>${badge(b.status)}</td><td><button class="row-action" data-detail="branch" data-id="${b.id}">Ver detalle</button></td></tr>`).join('')}</tbody></table></div></div>`;
+  return `
+    ${breadcrumb([['dashboard', 'Administración'], ['branches', 'Sucursales']])}
+    ${pageHeader('Sucursales', 'Consulta y organiza las sedes operativas de tus empresas.', '<button class="primary" data-action="new-branch">＋ Nueva sucursal</button>')}
+    <div class="panel">
+      <div class="table-toolbar">
+        <div class="filter-row">
+          <input id="page-search" placeholder="Buscar sucursal o código..." value="${escapeHtml(state.query)}" style="min-width:260px;">
+          <select>
+            <option value="">Todas las empresas</option>
+            ${companyOptions}
+          </select>
+        </div>
+        <span class="panel-note">${state.branches.length} sucursales</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>Código</th>
+              <th>Empresa</th>
+              <th>Encargado</th>
+              <th>Usuarios</th>
+              <th>Estado</th>
+              <th style="text-align:right;">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${state.branches.filter(b => `${b.name} ${b.code}`.toLowerCase().includes(state.query.toLowerCase())).map(b => {
+              const mInitials = getInitials(b.manager || 'Encargado');
+              return `
+                <tr>
+                  <td><strong>${escapeHtml(b.name)}</strong></td>
+                  <td><span class="folio-tag">#${escapeHtml(b.code)}</span></td>
+                  <td>${escapeHtml(b.company)}</td>
+                  <td>
+                    <div class="emp-cell-flex">
+                      <div class="emp-avatar-sm" style="width:26px;height:26px;font-size:10px;">${escapeHtml(mInitials)}</div>
+                      <div class="emp-cell-info">
+                        <strong style="font-size:12.5px;">${escapeHtml(b.manager)}</strong>
+                      </div>
+                    </div>
+                  </td>
+                  <td><strong style="font-variant-numeric:tabular-nums;">${b.users}</strong></td>
+                  <td>${badge(b.status)}</td>
+                  <td style="text-align:right;">
+                    <button class="row-action" data-detail="branch" data-id="${b.id}">Ver detalle →</button>
+                  </td>
+                </tr>
+              `;
+            }).join('') || '<tr><td colspan="7" class="empty">No encontramos sucursales.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
 }
 
 export function branchDetail(id) {
   const branch = state.branches.find(item => item.id === id);
   if (!branch) return '<div class="empty">Sucursal no encontrada.</div>';
-  return `${breadcrumb([['dashboard', 'Administración'], ['branches', 'Sucursales'], ['branches', escapeHtml(branch.name)]])}<div class="detail-head"><div><h1>${escapeHtml(branch.name)}</h1><p class="subtitle">${escapeHtml(branch.code)} · ${escapeHtml(branch.company)} · ${badge(branch.status)}</p></div><div class="inline-actions"><button class="secondary" data-action="edit-branch">Editar</button><button class="${branch.status === 'Activa' ? 'danger' : 'primary'}" data-action="toggle-branch">${branch.status === 'Activa' ? 'Desactivar' : 'Activar'}</button></div></div><div class="grid-2"><div class="panel"><div class="panel-head"><h2>Información general</h2></div><div class="panel-body"><p><strong>Empresa</strong><br>${escapeHtml(branch.company)}</p><p><strong>Usuarios asignados</strong><br>${branch.users}</p><p><strong>Encargado</strong><br>${escapeHtml(branch.manager)}</p></div></div><div class="panel"><div class="panel-head"><h2>Estado</h2></div><div class="panel-body">${badge(branch.status)}</div></div></div>`;
+  return `
+    ${breadcrumb([['dashboard', 'Administración'], ['branches', 'Sucursales'], ['branches', escapeHtml(branch.name)]])}
+    <div class="detail-head">
+      <div>
+        <h1>${escapeHtml(branch.name)}</h1>
+        <p class="subtitle">${escapeHtml(branch.code)} · ${escapeHtml(branch.company)} · ${badge(branch.status)}</p>
+      </div>
+      <div class="inline-actions">
+        <button class="secondary" data-action="edit-branch">Editar</button>
+        <button class="${branch.status === 'Activa' ? 'danger' : 'primary'}" data-action="toggle-branch">
+          ${branch.status === 'Activa' ? 'Desactivar' : 'Activar'}
+        </button>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-head"><h2>Información general</h2></div>
+        <div class="panel-body">
+          <p><strong>Empresa:</strong> ${escapeHtml(branch.company)}</p>
+          <p><strong>Usuarios asignados:</strong> ${branch.users}</p>
+          <p><strong>Encargado:</strong> ${escapeHtml(branch.manager)}</p>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Estado</h2></div>
+        <div class="panel-body">${badge(branch.status)}</div>
+      </div>
+    </div>
+  `;
 }
 
 export function roles() {
-  return `${breadcrumb([['dashboard', 'Administración'], ['roles', 'Roles y permisos']])}${pageHeader('Roles y permisos', 'Define el alcance de cada perfil dentro de Kinetix.', '<button class="primary" data-action="new-role">＋ Nuevo rol</button>')}<div class="panel"><div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Descripción</th><th>Usuarios</th><th>Tipo</th><th></th></tr></thead><tbody>${state.roles.map(r => `<tr><td><strong>${escapeHtml(r.name)}</strong></td><td>${escapeHtml(r.description)}</td><td>${r.users}</td><td>${escapeHtml(r.type)}</td><td><button class="row-action" data-action="edit-role" data-role="${escapeHtml(r.name)}" data-role-id="${r.id}">Editar permisos</button></td></tr>`).join('')}</tbody></table></div></div>`;
+  return `
+    ${breadcrumb([['dashboard', 'Administración'], ['roles', 'Roles y permisos']])}
+    ${pageHeader('Roles y Permisos', 'Define el alcance, privilegios y accesos de cada perfil dentro de Kinetix.', '<button class="primary" data-action="new-role">＋ Nuevo rol</button>')}
+    <div class="panel">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Nombre del Rol</th>
+              <th>Descripción</th>
+              <th>Usuarios Asignados</th>
+              <th>Tipo</th>
+              <th style="text-align:right;">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${state.roles.map(r => `
+              <tr>
+                <td><strong>${escapeHtml(r.name)}</strong></td>
+                <td><small style="color:var(--muted);">${escapeHtml(r.description)}</small></td>
+                <td><strong style="font-variant-numeric:tabular-nums;">${r.users}</strong> activos</td>
+                <td><span class="tag-neutral">${escapeHtml(r.type)}</span></td>
+                <td style="text-align:right;">
+                  <button class="row-action" data-action="edit-role" data-role="${escapeHtml(r.name)}" data-role-id="${r.id}">
+                    Editar permisos
+                  </button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
 }
 
 export function audit() {
-  return `${breadcrumb([['dashboard', 'Administración'], ['audit', 'Auditoría']])}${pageHeader('Auditoría', 'Investiga las acciones realizadas dentro de la plataforma.', '<button class="secondary" data-action="export-audit">⇓ Exportar CSV</button>')}<div class="panel"><div class="table-toolbar"><div class="filter-row"><input id="page-search" placeholder="Buscar usuario o registro" value="${escapeHtml(state.auditSearch)}"><select data-audit-filter="module"><option value="">Todos los módulos</option><option value="Usuarios">Usuarios</option><option value="Empresas">Empresas</option><option value="Sucursales">Sucursales</option><option value="Acceso">Acceso</option><option value="Inventario">Inventario</option><option value="Finanzas">Finanzas</option><option value="Roles">Roles</option></select><select data-audit-filter="action"><option value="">Todas las acciones</option><option value="CREATE">CREATE</option><option value="UPDATE">UPDATE</option><option value="LOGIN">LOGIN</option><option value="LOGIN_FAILED">LOGIN_FAILED</option><option value="ACTIVATE">ACTIVATE</option><option value="DEACTIVATE">DEACTIVATE</option><option value="PASSWORD_CHANGE">PASSWORD_CHANGE</option></select><button class="primary" data-action="refresh-audit">Buscar</button></div></div><div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Módulo</th><th>Registro</th><th>IP</th><th></th></tr></thead><tbody>${state.audit.map(a => `<tr><td>${a.date}</td><td><strong>${escapeHtml(a.user)}</strong></td><td><span class="badge ${a.action === 'DEACTIVATE' || a.action === 'LOGIN_FAILED' ? 'inactive' : 'active'}">${escapeHtml(a.action)}</span></td><td>${escapeHtml(a.module)}</td><td>${escapeHtml(a.record)}</td><td>${escapeHtml(a.ip)}</td><td><button class="row-action" data-action="audit-detail" data-audit-id="${a.id}">Ver detalle</button></td></tr>`).join('')}</tbody></table></div></div>`;
+  return `
+    ${breadcrumb([['dashboard', 'Administración'], ['audit', 'Auditoría']])}
+    ${pageHeader('Auditoría', 'Registro inmutable de trazabilidad de acciones operativas y de seguridad.', '<button class="secondary" data-action="export-audit">⇓ Exportar CSV</button>')}
+    <div class="panel">
+      <div class="table-toolbar">
+        <div class="filter-row">
+          <input id="page-search" placeholder="Buscar usuario o registro..." value="${escapeHtml(state.auditSearch)}" style="min-width:240px;">
+          <select data-audit-filter="module">
+            <option value="">Todos los módulos</option>
+            <option value="Usuarios">Usuarios</option>
+            <option value="Empresas">Empresas</option>
+            <option value="Sucursales">Sucursales</option>
+            <option value="Acceso">Acceso</option>
+            <option value="Inventario">Inventario</option>
+            <option value="Finanzas">Finanzas</option>
+            <option value="Roles">Roles</option>
+          </select>
+          <select data-audit-filter="action">
+            <option value="">Todas las acciones</option>
+            <option value="CREATE">CREATE</option>
+            <option value="UPDATE">UPDATE</option>
+            <option value="LOGIN">LOGIN</option>
+            <option value="LOGIN_FAILED">LOGIN_FAILED</option>
+            <option value="ACTIVATE">ACTIVATE</option>
+            <option value="DEACTIVATE">DEACTIVATE</option>
+            <option value="PASSWORD_CHANGE">PASSWORD_CHANGE</option>
+          </select>
+          <button class="primary" data-action="refresh-audit" style="padding:0 16px;">Buscar</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha y Hora</th>
+              <th>Usuario</th>
+              <th>Acción</th>
+              <th>Módulo</th>
+              <th>Registro Afectado</th>
+              <th>Dirección IP</th>
+              <th style="text-align:right;">Detalle</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${state.audit.map(a => {
+              const aInitials = getInitials(a.user || 'Admin');
+              return `
+                <tr>
+                  <td><span style="font-variant-numeric:tabular-nums; color:var(--muted); font-size:12px;">${a.date}</span></td>
+                  <td>
+                    <div class="emp-cell-flex">
+                      <div class="emp-avatar-sm" style="width:28px;height:28px;font-size:10px;">${escapeHtml(aInitials)}</div>
+                      <div class="emp-cell-info">
+                        <strong style="font-size:12.5px;">${escapeHtml(a.user)}</strong>
+                      </div>
+                    </div>
+                  </td>
+                  <td>${badge(a.action)}</td>
+                  <td><span class="tag-neutral">${escapeHtml(a.module)}</span></td>
+                  <td><strong>${escapeHtml(a.record)}</strong></td>
+                  <td><span class="folio-tag" style="font-size:11px;">${escapeHtml(a.ip)}</span></td>
+                  <td style="text-align:right;">
+                    <button class="row-action" data-action="audit-detail" data-audit-id="${a.id}">Ver →</button>
+                  </td>
+                </tr>
+              `;
+            }).join('') || '<tr><td colspan="7" class="empty">No hay eventos de auditoría registrados.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
 }
 
 export function profile() {

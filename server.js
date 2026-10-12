@@ -6,6 +6,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 // M-05: rate limiting para protección contra fuerza bruta
 import { rateLimit } from 'express-rate-limit';
+import { registerHrModule } from './server/modules/hr/index.js';
+import { runMigrations } from './server/modules/hr/migrate.js';
 
 // M-09: Logger estructurado JSON
 const originalLog = console.log;
@@ -363,20 +365,24 @@ function requirePermission(moduleName, permissionName) {
   };
 }
 
-async function writeAudit(request, action, moduleName, entityName, entityId, companyId = request.user?.companyId) {
+async function writeAudit(request, action, moduleName, entityName, entityId, companyId = request.user?.companyId, options = {}) {
   const pool = await getPool();
   await pool.request()
     .input('userId', sql.NVarChar(450), request.user?.userId || null)
     .input('companyId', sql.Int, companyId || null)
+    .input('branchId', sql.Int, options.branchId || null)
     .input('action', sql.NVarChar(40), action)
     .input('module', sql.NVarChar(80), moduleName)
     .input('entity', sql.NVarChar(80), entityName || null)
     .input('entityId', sql.NVarChar(100), entityId == null ? null : String(entityId))
+    .input('oldValues', sql.NVarChar(sql.MAX), options.oldValues ? (typeof options.oldValues === 'string' ? options.oldValues : JSON.stringify(options.oldValues)) : null)
+    .input('newValues', sql.NVarChar(sql.MAX), options.newValues ? (typeof options.newValues === 'string' ? options.newValues : JSON.stringify(options.newValues)) : null)
+    .input('context', sql.NVarChar(1000), options.context || null)
     .input('ip', sql.VarChar(45), request.ip)
     .input('userAgent', sql.NVarChar(500), request.get('user-agent') || null)
     .query(`
-      INSERT INTO dbo.AuditLogs (UserId, CompanyId, ActionName, ModuleName, EntityName, EntityId, IpAddress, UserAgent)
-      VALUES (@userId, @companyId, @action, @module, @entity, @entityId, @ip, @userAgent);
+      INSERT INTO dbo.AuditLogs (UserId, CompanyId, BranchId, ActionName, ModuleName, EntityName, EntityId, OldValues, NewValues, Context, IpAddress, UserAgent)
+      VALUES (@userId, @companyId, @branchId, @action, @module, @entity, @entityId, @oldValues, @newValues, @context, @ip, @userAgent);
     `);
 }
 
@@ -1484,13 +1490,32 @@ app.post('/api/roles', requireRoleAdministration, async (request, response) => {
   }
 });
 
+let activePool = null;
+const poolProxy = new Proxy({}, {
+  get(_target, prop) {
+    if (!activePool) throw new Error('Database pool not ready yet');
+    const val = activePool[prop];
+    return typeof val === 'function' ? val.bind(activePool) : val;
+  }
+});
+
+registerHrModule(app, {
+  pool: poolProxy,
+  sql,
+  requirePermission,
+  writeAudit,
+  isGlobalAdmin
+});
+
 app.use((_request, response) => {
   if (_request.path.startsWith('/api/')) return response.status(404).json({ message: 'Ruta API no encontrada.' });
   if (path.extname(_request.path)) return response.status(404).send('Not found');
   response.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-ensureOperationsSchema().then(() => {
+ensureOperationsSchema().then(async () => {
+  activePool = await getPool();
+  await runMigrations(activePool);
   app.listen(port, () => {
     console.log(`Kinetix Core disponible en http://localhost:${port}`);
     console.log(`Base configurada: ${dbConfig.server}/${dbConfig.database}`);
@@ -1499,3 +1524,4 @@ ensureOperationsSchema().then(() => {
   console.error('Operations schema initialization failed:', error.message);
   process.exitCode = 1;
 });
+

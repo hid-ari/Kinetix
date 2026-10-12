@@ -273,6 +273,51 @@ Ejemplo:
 - Filtros de auditoría por texto, módulo y acción.
 - Escape de valores dinámicos en varias vistas del frontend.
 
+## 12. Módulo de Recursos Humanos (Talento Humano) — Fase 1
+
+El módulo de Recursos Humanos proporciona una gestión integral, modular y conforme a la normativa laboral de la República Dominicana (cédula con módulo 10/Luhn, confidencialidad y expedientes digitales).
+
+### Componentes y Vistas
+- **Dashboard de Talento Humano (`/hr-dashboard`)**: Tarjetas de métricas KPI (plantilla total, colaboradores activos, suspendidos, licencias), costo de nómina base consolidada, distribución por departamento y modalidad de contrato, sucursales y cumpleaños del mes.
+- **Gestión de Empleados (`/hr-employees`)**: Listado paginado con búsqueda por nombre, código o documento, filtros por estado, departamento y sucursal, badges cromáticos ejecutivos y exportación formal a CSV.
+- **Expediente Digital del Empleado (`/hr-employee-detail`)**:
+  - *Resumen Ejecutivo*: Ficha personal, datos de contacto, condiciones contractuales y compensación.
+  - *Repositorio Digital de Documentos*: Carga y versionado de contratos, certificaciones y documentos (PDF, Word, Excel, imágenes) con almacenamiento físico seguro (`storage/hr/<companyId>/docs/`) y soporte para documentos confidenciales.
+  - *Historial Laboral Inmutable*: Trazabilidad completa con línea de tiempo y registro de valores anteriores y posteriores (`FromSalary` -> `ToSalary`, cambios de cargo, departamento y estado).
+  - *Ficha PDF Oficial*: Generación y streaming de dossier formal en PDF con PDFKit (`/api/hr/employees/:id/pdf`).
+- **Formulario de Empleado (`/hr-employee-form`)**: Alta y edición en 5 secciones con validación algorítmica de cédula dominicana y generación correlativa atómica de código (`EMP-00001`).
+- **Estructura Departamental (`/hr-departments`)**: Administración de unidades con árbol jerárquico, cálculo dinámico de colaboradores y prevención automática de ciclos (`checkDepartmentCycle`).
+- **Cargos y Perfiles (`/hr-positions`)**: Catálogo de puestos con niveles jerárquicos (1 a 15) y bandas salariales mínima y máxima en DOP.
+- **Organigrama General (`/hr-orgchart`)**: Visualización jerárquica con unidades, responsables de área (con icono distintivo) y personal adscrito con foto/avatar.
+
+### Endpoints de API REST (`/api/hr`)
+- `GET /api/hr/dashboard` — Métricas y KPIs consolidados.
+- `GET /api/hr/catalogs` — Catálogos de contrato, modalidad, documentos y causales de desvinculación.
+- `GET /api/hr/departments` / `POST /api/hr/departments` / `PUT /api/hr/departments/:id` — Departamentos.
+- `GET /api/hr/positions` / `POST /api/hr/positions` / `PUT /api/hr/positions/:id` — Cargos y bandas.
+- `GET /api/hr/org-chart` — Estructura organizativa.
+- `GET /api/hr/employees` — Listado con paginación, filtros y ofuscación de datos sensibles/salariales.
+- `POST /api/hr/employees` — Registro transaccional con movimiento inicial de ingreso y auditoría.
+- `GET /api/hr/employees/:id` — Detalle del colaborador.
+- `PUT /api/hr/employees/:id` — Modificación de información del colaborador.
+- `GET /api/hr/employees/:id/pdf` — Generación de expediente formal en PDF.
+- `GET /api/hr/employees/:id/history` — Historial de movimientos laborales.
+- `POST /api/hr/employees/:id/transfer` — Transferencia de sucursal/departamento.
+- `POST /api/hr/employees/:id/promote` — Ascenso de cargo o compensación.
+- `POST /api/hr/employees/:id/salary` — Ajuste salarial auditado.
+- `POST /api/hr/employees/:id/suspend` — Suspensión laboral.
+- `POST /api/hr/employees/:id/leave` — Licencia médica o personal.
+- `POST /api/hr/employees/:id/reactivate` — Reincorporación o reactivación.
+- `POST /api/hr/employees/:id/terminate` — Desvinculación definitiva.
+- `GET /api/hr/employees/:id/documents` / `POST /api/hr/employees/:id/documents` — Expediente digital.
+- `POST /api/hr/documents/:id/versions` — Nueva versión de documento existente.
+- `GET /api/hr/documents/:id/download` — Descarga segura con verificación de permisos y confidencialidad.
+- `DELETE /api/hr/documents/:id` — Eliminación lógica archivada del expediente.
+
+### Seguridad y Blindaje de Auditoría
+- **Trigger `TR_AuditLogs_Immutable`**: Bloqueo absoluto de `UPDATE` y `DELETE` sobre `dbo.AuditLogs`.
+- **Protección de Datos Sensibles**: Si el usuario no tiene permisos (`RRHH Empleados|Ver datos sensibles` y `Ver información salarial`), el backend ofusca automáticamente la cédula (`40*********1-2`), enmascara teléfonos (`809***1234`), y omite salario, fecha de nacimiento y dirección.
+
 ## 12. Pendientes importantes
 
 - Aplicar aislamiento por `CompanyId` a todas las consultas y mutaciones.

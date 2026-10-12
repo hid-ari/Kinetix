@@ -55,6 +55,26 @@ export function layout(content) {
           <div class="search"><span>⌕</span><input id="global-search" placeholder="Buscar en Kinetix..." value="${escapeHtml(state.query)}"></div>
         </div>
         <div class="top-actions">
+          <div class="topbar-notifications-wrapper">
+            <button class="topbar-bell-btn" data-action="toggle-notifications" title="Notificaciones internas">
+              <svg viewBox="0 0 20 20" fill="currentColor" style="width:18px;height:18px;">
+                <path d="M10 2a6 6 0 00-6 6v3l-2 3h16l-2-3V8a6 6 0 00-6-6zM8 16h4a2 2 0 01-4 0z"/>
+              </svg>
+              ${(state.hr?.unreadNotificationsCount || 0) > 0 ? `<span class="notification-badge">${state.hr.unreadNotificationsCount}</span>` : ''}
+            </button>
+            <div class="notifications-dropdown hidden" id="notifications-popover">
+              <div class="notifications-head">
+                <strong>Notificaciones</strong>
+                <button class="link-btn" data-action="mark-all-notifications-read">Marcar leídas</button>
+              </div>
+              <div class="notifications-body" id="notifications-list-container">
+                <div class="notifications-loading">Cargando notificaciones...</div>
+              </div>
+              <div class="notifications-foot">
+                <button class="link-btn full-width" data-nav="hr-approvals">Ir a Bandeja de Aprobaciones →</button>
+              </div>
+            </div>
+          </div>
           <button class="topbar-profile-btn" data-nav="profile" title="Mi perfil">
             <div class="profile-avatar">${escapeHtml(initials(userName))}</div>
             <div class="profile-info">

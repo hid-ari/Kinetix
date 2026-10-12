@@ -6,13 +6,17 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "check": "node --check server.js"
+    "check": "node --check server.js",
+    "migrate": "node scripts/run-migrations.mjs",
+    "test": "node scripts/test-hr-phase1.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
     "express": "^5.1.0",
     "express-rate-limit": "^8.7.0",
     "msnodesqlv8": "^4.2.1",
-    "mssql": "^11.0.1"
+    "mssql": "^11.0.1",
+    "multer": "^2.4.0",
+    "pdfkit": "^0.17.2"
   }
 }

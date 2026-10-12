@@ -11,6 +11,16 @@ import {
   inventory, products, stock, movements, alerts
 } from '../views/inventory/inventory.views.js';
 import { finance, financeWorkspace } from '../views/finance/finance.view.js';
+import { hrDashboard } from '../views/hr/hr.dashboard.view.js';
+import { employeesView } from '../views/hr/employees.view.js';
+import { employeeForm } from '../views/hr/employee-form.view.js';
+import { employeeDetailView } from '../views/hr/employee-detail.view.js';
+import { departmentsView } from '../views/hr/departments.view.js';
+import { positionsView } from '../views/hr/positions.view.js';
+import { orgChartView } from '../views/hr/org-chart.view.js';
+import { attendanceView } from '../views/hr/attendance.view.js';
+import { vacationsView } from '../views/hr/vacations.view.js';
+import { approvalsView } from '../views/hr/approvals.view.js';
 
 export function syncCompanySummary() {
   if (state.view !== 'company-detail') return;
@@ -34,6 +44,16 @@ export function render() {
   if (state.view === 'roles' && !canManageRoles()) state.view = 'dashboard';
 
   let content = state.view === 'dashboard' ? dashboard()
+    : state.view === 'hr-dashboard' ? hrDashboard()
+    : state.view === 'hr-employees' ? employeesView()
+    : state.view === 'hr-employee-form' ? employeeForm(state.hr.editMode ? state.hr.currentEmployee : null)
+    : state.view === 'hr-employee-detail' ? employeeDetailView(state.hr.currentEmployee)
+    : state.view === 'hr-departments' ? departmentsView()
+    : state.view === 'hr-positions' ? positionsView()
+    : state.view === 'hr-attendance' ? attendanceView()
+    : state.view === 'hr-vacations' ? vacationsView()
+    : state.view === 'hr-approvals' ? approvalsView()
+    : state.view === 'hr-orgchart' ? orgChartView()
     : state.view === 'inventory' ? inventory()
     : state.view === 'products' ? products()
     : state.view === 'stock' ? stock()

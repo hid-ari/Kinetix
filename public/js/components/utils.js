@@ -3,7 +3,20 @@ export function escapeHtml(value) {
 }
 
 export function badge(status) {
-  return `<span class="badge ${status === 'Activa' ? 'active' : 'inactive'}">${escapeHtml(status)}</span>`;
+  const s = String(status || '').toLowerCase().trim();
+  let type = 'neutral';
+  if (['activa', 'activo', 'aprobada', 'aprobado', 'completada', 'completado', 'saludable', 'puntual', 'conciliada', 'conciliado'].includes(s)) {
+    type = 'success';
+  } else if (['inactiva', 'inactivo', 'revertida', 'revertido', 'cancelado', 'cancelada', 'rechazada', 'rechazado', 'agotado', 'agotada', 'desvinculado', 'desvinculada', 'crítico', 'critico'].includes(s)) {
+    type = 'danger';
+  } else if (['pendiente', 'bajo', 'suspendido', 'suspendida', 'tardanza', 'alerta', 'reponer'].includes(s)) {
+    type = 'warning';
+  } else if (['licencia', 'permiso'].includes(s)) {
+    type = 'purple';
+  } else if (['vacaciones', 'info', 'entrada'].includes(s)) {
+    type = 'info';
+  }
+  return `<span class="badge-pill ${type}"><span class="badge-pill-dot"></span>${escapeHtml(status || 'N/A')}</span>`;
 }
 
 export function toast(message) {
