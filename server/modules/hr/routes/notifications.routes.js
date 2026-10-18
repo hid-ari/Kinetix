@@ -40,6 +40,9 @@ export function createNotificationsRouter(ctx) {
   const handleMarkRead = async (req, res) => {
     try {
       const updated = await markNotificationRead(pool, req.params.id, req.user.userId);
+      if (!updated) {
+        return res.status(404).json({ message: 'Notificación no encontrada.' });
+      }
       res.json(updated);
     } catch (err) {
       console.error('Error marking notification read:', err);

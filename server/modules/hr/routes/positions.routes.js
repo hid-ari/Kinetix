@@ -4,7 +4,8 @@ import {
   getPositionById,
   createPosition,
   updatePosition,
-  togglePositionStatus
+  togglePositionStatus,
+  deletePosition
 } from '../repositories/positions.repo.js';
 import { resolveTargetCompanyId, assertCompanyAccess } from '../access.js';
 import { validateSalaryRange } from '../validators.js';
@@ -144,6 +145,25 @@ export function createPositionsRouter(ctx) {
     } catch (err) {
       console.error('Error toggling position status:', err);
       res.status(err.status || 500).json({ message: err.message || 'Error al cambiar estado del cargo.' });
+    }
+  });
+
+  router.delete('/positions/:id', requirePermission('RRHH Estructura', 'Administrar departamentos y cargos'), async (req, res) => {
+    try {
+      const pos = await getPositionById(pool, req.params.id);
+      if (!pos) return res.status(404).json({ message: 'Cargo no encontrado.' });
+      await assertCompanyAccess(pool, req, pos.CompanyId);
+
+      const deleted = await deletePosition(pool, pos.Id, pos.CompanyId);
+
+      await writeAudit(req, 'DELETE', 'RRHH Estructura', 'HrPosition', String(pos.Id), pos.CompanyId, {
+        oldValues: pos
+      });
+
+      res.json({ message: `Cargo "${pos.Title}" eliminado exitosamente.`, deleted });
+    } catch (err) {
+      console.error('Error deleting position:', err);
+      res.status(err.status || 500).json({ message: err.message || 'Error al eliminar cargo.' });
     }
   });
 

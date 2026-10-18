@@ -3,11 +3,13 @@ import {
   getPendingApprovalsForUser,
   getMySubmittedRequests,
   getApprovalRequestDetail,
-  processApprovalAction
+  processApprovalAction,
+  canUserActOnStep
 } from '../repositories/approvals.repo.js';
 import { applyVacationApproval, rejectVacationRequest } from '../repositories/vacations.repo.js';
 import { applyLeaveApproval, rejectLeaveRequest } from '../repositories/leaves.repo.js';
 import { applyAttendanceCorrection } from '../repositories/attendance.repo.js';
+import { findOwnEmployee } from '../employee-context.js';
 import { resolveTargetCompanyId, isGlobalAdmin, isCompanyAdmin } from '../access.js';
 
 export function createApprovalsRouter(ctx) {
@@ -40,14 +42,10 @@ export function createApprovalsRouter(ctx) {
       const companyId = resolveTargetCompanyId(req);
       if (!companyId) return res.status(400).json({ message: 'Se requiere especificar empresa.' });
 
-      const empRes = await pool.request()
-        .input('userId', req.user.userId)
-        .query('SELECT Id FROM dbo.HrEmployees WHERE UserId = @userId;');
-      const empId = empRes.recordset[0]?.Id;
+      const own = await findOwnEmployee(pool, req);
+      if (!own) return res.json([]);
 
-      if (!empId) return res.json([]);
-
-      const requests = await getMySubmittedRequests(pool, { companyId, employeeId: empId });
+      const requests = await getMySubmittedRequests(pool, { companyId, employeeId: own.Id });
       res.json(requests);
     } catch (err) {
       console.error('Error fetching my requests:', err);
@@ -58,9 +56,37 @@ export function createApprovalsRouter(ctx) {
   // Request detail with history
   router.get('/approvals/:id', async (req, res) => {
     try {
-      const detail = await getApprovalRequestDetail(pool, req.params.id);
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: 'Identificador de solicitud inválido.' });
+
+      const detail = await getApprovalRequestDetail(pool, id);
       if (!detail) return res.status(404).json({ message: 'Solicitud no encontrada.' });
-      res.json(detail);
+
+      if (!isGlobalAdmin(req)) {
+        const companyId = resolveTargetCompanyId(req);
+        if (companyId && Number(companyId) !== detail.CompanyId) {
+          return res.status(404).json({ message: 'Solicitud no encontrada.' });
+        }
+        const currentStep = detail.steps.find(s => s.StepNumber === detail.CurrentStepNumber);
+        const own = await findOwnEmployee(pool, req);
+        const isRequester = own && own.Id === detail.RequesterEmployeeId;
+        const wasApprover = detail.history.some(h => h.ApproverUserId === req.user.userId);
+        const canAct = currentStep && await canUserActOnStep(pool, detail, currentStep, {
+          userId: req.user.userId, companyId, isGlobalAdmin: false, isCompanyAdmin: isCompanyAdmin(req)
+        });
+        if (!isRequester && !wasApprover && !canAct) {
+          return res.status(403).json({ message: 'No tiene acceso a esta solicitud.' });
+        }
+      }
+
+      const currentStep = detail.steps.find(s => s.StepNumber === detail.CurrentStepNumber) || null;
+      const { steps, history, ...request } = detail;
+      res.json({
+        request,
+        currentStep: currentStep ? { ...currentStep, StepName: currentStep.Name } : null,
+        steps,
+        history
+      });
     } catch (err) {
       console.error('Error getting approval detail:', err);
       res.status(500).json({ message: 'Error al consultar detalle de solicitud.' });
@@ -80,6 +106,7 @@ export function createApprovalsRouter(ctx) {
         approverUserId: req.user.userId,
         action,
         comments,
+        companyId: resolveTargetCompanyId(req),
         isGlobalAdmin: isGlobalAdmin(req),
         isCompanyAdmin: isCompanyAdmin(req)
       });

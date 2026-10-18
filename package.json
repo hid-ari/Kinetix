@@ -8,7 +8,10 @@
     "dev": "node server.js",
     "check": "node --check server.js",
     "migrate": "node scripts/run-migrations.mjs",
-    "test": "node scripts/test-hr-phase1.mjs"
+    "test": "node scripts/test-hr-phase1.mjs && node scripts/test-hr-phase2.mjs && node scripts/test-hr-usage.mjs",
+    "test:phase1": "node scripts/test-hr-phase1.mjs",
+    "test:phase2": "node scripts/test-hr-phase2.mjs",
+    "test:usage": "node scripts/test-hr-usage.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.7",

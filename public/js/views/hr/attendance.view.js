@@ -12,21 +12,30 @@ export function attendanceView() {
   const hasCheckedIn = Boolean(currentAttendance?.CheckInTime);
   const hasCheckedOut = Boolean(currentAttendance?.CheckOutTime);
 
+  const isLinked = today.linked !== false;
+
   // Modern pill status badge helper
   const renderStatusBadge = (status) => {
     switch (status) {
+      case 'Presente':
       case 'Puntual':
-        return '<span class="badge-pill success"><span class="badge-pill-dot"></span>Puntual</span>';
+      case 'Completado':
+        return '<span class="badge-pill success"><span class="badge-pill-dot"></span>Presente</span>';
       case 'Tardanza':
         return '<span class="badge-pill warning"><span class="badge-pill-dot"></span>Tardanza</span>';
+      case 'Ausencia':
       case 'Ausente':
         return '<span class="badge-pill danger"><span class="badge-pill-dot"></span>Ausente</span>';
+      case 'SalidaAnticipada':
+        return '<span class="badge-pill warning"><span class="badge-pill-dot"></span>Salida Anticipada</span>';
       case 'Vacaciones':
         return '<span class="badge-pill info"><span class="badge-pill-dot"></span>Vacaciones</span>';
       case 'Permiso':
         return '<span class="badge-pill purple"><span class="badge-pill-dot"></span>Permiso</span>';
-      case 'Completado':
-        return '<span class="badge-pill success"><span class="badge-pill-dot"></span>Completada</span>';
+      case 'Feriado':
+        return '<span class="badge-pill info"><span class="badge-pill-dot"></span>Feriado</span>';
+      case 'Descanso':
+        return '<span class="badge-pill neutral"><span class="badge-pill-dot"></span>Descanso</span>';
       default:
         return `<span class="badge-pill neutral"><span class="badge-pill-dot"></span>${escapeHtml(status || 'Pendiente')}</span>`;
     }
@@ -96,28 +105,35 @@ export function attendanceView() {
 
         <!-- Panel de Acciones de Ponche -->
         <div class="attendance-punch-panel">
+          ${!isLinked ? `
+            <div style="background:#fffbeb;border:1px solid #fde68a;color:#92400e;padding:12px;border-radius:6px;margin-bottom:12px;font-size:13px;">
+              <strong>Aviso:</strong> ${escapeHtml(today.message || 'Su usuario no está vinculado a un expediente de empleado en esta empresa.')}
+            </div>
+          ` : ''}
           <div class="punch-status-card ${hasCheckedOut ? 'completed' : hasCheckedIn ? 'active' : 'idle'}">
             <div class="punch-status-icon-wrap">
               ${hasCheckedOut
-                ? `<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>`
-                : hasCheckedIn
-                  ? `<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>`
-                  : `<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/></svg>`}
+      ? `<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>`
+      : hasCheckedIn
+        ? `<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>`
+        : `<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/></svg>`}
             </div>
             <div class="punch-status-info">
-              <h4>${hasCheckedOut ? 'Jornada Finalizada Hoy' : hasCheckedIn ? 'Jornada en Curso' : 'Sin Ponche de Entrada'}</h4>
+              <h4>${!isLinked ? 'Terminal no disponible' : hasCheckedOut ? 'Jornada Finalizada Hoy' : hasCheckedIn ? 'Jornada en Curso' : 'Sin Ponche de Entrada'}</h4>
               <p>
-                ${hasCheckedOut
-                  ? `Salida: ${formatTime(currentAttendance.CheckOutTime)} · Horas Regulares: ${currentAttendance.RegularHours || 0}h · Extras: ${currentAttendance.OvertimeHours || 0}h`
-                  : hasCheckedIn
-                    ? `Entrada registrada a las ${formatTime(currentAttendance.CheckInTime)} (${currentAttendance.Status || 'Puntual'})`
-                    : 'Registre su entrada al iniciar sus labores para computar puntualidad y jornada reglamentaria'}
+                ${!isLinked
+      ? 'Vincule su usuario con un empleado para poder registrar entradas y salidas.'
+      : hasCheckedOut
+        ? `Salida: ${formatTime(currentAttendance.CheckOutTime)} · Horas Regulares: ${currentAttendance.RegularHours || 0}h · Extras: ${currentAttendance.OvertimeHours || 0}h`
+        : hasCheckedIn
+          ? `Entrada registrada a las ${formatTime(currentAttendance.CheckInTime)} (${currentAttendance.Status || 'Presente'})`
+          : 'Registre su entrada al iniciar sus labores para computar puntualidad y jornada reglamentaria'}
               </p>
             </div>
           </div>
 
           <div class="punch-buttons-grid">
-            <button class="btn-punch btn-punch-in" data-action="hr-punch-in" ${hasCheckedIn ? 'disabled' : ''}>
+            <button class="btn-punch btn-punch-in" data-action="hr-punch-in" ${(!isLinked || hasCheckedIn) ? 'disabled' : ''}>
               <div class="btn-punch-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/></svg>
               </div>
@@ -127,7 +143,7 @@ export function attendanceView() {
               </div>
             </button>
 
-            <button class="btn-punch btn-punch-out" data-action="hr-punch-out" ${(!hasCheckedIn || hasCheckedOut) ? 'disabled' : ''}>
+            <button class="btn-punch btn-punch-out" data-action="hr-punch-out" ${(!isLinked || !hasCheckedIn || hasCheckedOut) ? 'disabled' : ''}>
               <div class="btn-punch-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
               </div>
@@ -157,9 +173,9 @@ export function attendanceView() {
           <div class="stat-icon-wrapper green">
             <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
           </div>
-          <div class="stat-content">
+          <div class="stat-content">Acceso Rápido de Prueba:
             <span class="stat-label">Puntualidad</span>
-            <strong class="stat-value">${list.filter(a => a.Status === 'Puntual' || a.Status === 'Completado').length}</strong>
+            <strong class="stat-value">${list.filter(a => a.Status === 'Presente' || a.Status === 'Puntual' || a.Status === 'Completado').length}</strong>
             <span class="stat-sub">En el período consultado</span>
           </div>
         </div>
@@ -202,12 +218,12 @@ export function attendanceView() {
             <label>Estado</label>
             <select id="hr-att-status">
               <option value="">Todos los estados</option>
-              <option value="Puntual" ${state.hr.attendanceStatusFilter === 'Puntual' ? 'selected' : ''}>Puntual</option>
+              <option value="Presente" ${state.hr.attendanceStatusFilter === 'Presente' ? 'selected' : ''}>Presente</option>
               <option value="Tardanza" ${state.hr.attendanceStatusFilter === 'Tardanza' ? 'selected' : ''}>Tardanza</option>
-              <option value="Completado" ${state.hr.attendanceStatusFilter === 'Completado' ? 'selected' : ''}>Completado</option>
+              <option value="Ausencia" ${state.hr.attendanceStatusFilter === 'Ausencia' ? 'selected' : ''}>Ausencia</option>
+              <option value="SalidaAnticipada" ${state.hr.attendanceStatusFilter === 'SalidaAnticipada' ? 'selected' : ''}>Salida Anticipada</option>
               <option value="Vacaciones" ${state.hr.attendanceStatusFilter === 'Vacaciones' ? 'selected' : ''}>Vacaciones</option>
               <option value="Permiso" ${state.hr.attendanceStatusFilter === 'Permiso' ? 'selected' : ''}>Permiso / Licencia</option>
-              <option value="Ausente" ${state.hr.attendanceStatusFilter === 'Ausente' ? 'selected' : ''}>Ausente</option>
             </select>
           </div>
           <div class="filter-field btn-field">
@@ -256,9 +272,9 @@ export function attendanceView() {
                   </td>
                 </tr>
               ` : list.map(item => {
-                const empName = item.FirstName ? `${item.FirstName} ${item.LastName}` : (employee ? `${employee.FirstName} ${employee.LastName}` : 'Colaborador');
-                const empInit = initials(empName);
-                return `
+            const empName = item.FirstName ? `${item.FirstName} ${item.LastName}` : (employee ? `${employee.FirstName} ${employee.LastName}` : 'Colaborador');
+            const empInit = initials(empName);
+            return `
                 <tr>
                   <td><strong>${formatDate(item.AttendanceDate)}</strong></td>
                   <td>
@@ -283,7 +299,8 @@ export function attendanceView() {
                     </button>
                   </td>
                 </tr>
-              `;}).join('')}
+              `;
+          }).join('')}
             </tbody>
           </table>
         </div>
@@ -308,8 +325,8 @@ export function attendanceView() {
               <p class="shift-desc">${escapeHtml(s.Description || 'Turno operativo regular')}</p>
               <div class="shift-times">
                 <div><span>Horario laboral:</span> <strong>${s.StartTime ? s.StartTime.slice(0, 5) : '08:00'} - ${s.EndTime ? s.EndTime.slice(0, 5) : '17:00'}</strong></div>
-                <div><span>Tolerancia de entrada:</span> <strong>${s.GracePeriodMinutes || 0} min</strong></div>
-                <div><span>Tiempo de almuerzo:</span> <strong>${s.LunchDurationMinutes || 0} min</strong></div>
+                <div><span>Tolerancia de entrada:</span> <strong>${s.GraceMinutes ?? s.GracePeriodMinutes ?? 0} min</strong></div>
+                <div><span>Tiempo de almuerzo:</span> <strong>${s.BreakMinutes ?? s.LunchDurationMinutes ?? 0} min</strong></div>
               </div>
             </div>
           `).join('')}

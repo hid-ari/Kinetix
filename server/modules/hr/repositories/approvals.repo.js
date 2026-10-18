@@ -198,11 +198,16 @@ export async function getPendingApprovalsForUser(pool, {
              CONCAT(req.FirstName, N' ', req.LastName) AS RequesterName,
              req.EmployeeCode AS RequesterCode,
              d.Name AS DepartmentName,
+             d.Name AS RequesterDept,
              p.Title AS PositionTitle,
+             p.Title AS RequesterPosition,
              s.Name AS CurrentStepName,
-             s.ApproverType
+             s.ApproverType,
+             f.Name AS FlowName,
+             r.RequestType AS FlowCode
       FROM dbo.HrApprovalRequests r
       JOIN dbo.HrEmployees req ON req.Id = r.RequesterEmployeeId
+      JOIN dbo.HrApprovalFlows f ON f.Id = r.FlowId
       LEFT JOIN dbo.HrDepartments d ON d.Id = req.DepartmentId
       LEFT JOIN dbo.HrPositions p ON p.Id = req.PositionId
       JOIN dbo.HrApprovalSteps s ON s.FlowId = r.FlowId AND s.StepNumber = r.CurrentStepNumber
@@ -235,7 +240,8 @@ export async function getMySubmittedRequests(pool, { companyId, employeeId }) {
       SELECT r.Id, r.CompanyId, r.RequestType, r.EntityName, r.EntityId,
              r.CurrentStepNumber, r.Status, r.CreatedAt, r.ResolvedAt,
              s.Name AS CurrentStepName,
-             f.Name AS FlowName
+             f.Name AS FlowName,
+             r.RequestType AS FlowCode
       FROM dbo.HrApprovalRequests r
       JOIN dbo.HrApprovalFlows f ON f.Id = r.FlowId
       LEFT JOIN dbo.HrApprovalSteps s ON s.FlowId = r.FlowId AND s.StepNumber = r.CurrentStepNumber
@@ -258,10 +264,18 @@ export async function getApprovalRequestDetail(pool, requestId) {
              r.RequesterEmployeeId, r.CurrentStepNumber, r.Status, r.CreatedAt, r.ResolvedAt,
              CONCAT(req.FirstName, N' ', req.LastName) AS RequesterName,
              req.EmployeeCode AS RequesterCode,
+             req.UserId AS RequesterUserId,
+             req.SupervisorEmployeeId AS RequesterSupervisorId,
              d.Name AS DepartmentName,
-             p.Title AS PositionTitle
+             d.Name AS RequesterDept,
+             d.ManagerEmployeeId AS DepartmentManagerId,
+             p.Title AS PositionTitle,
+             p.Title AS RequesterPosition,
+             f.Name AS FlowName,
+             r.RequestType AS FlowCode
       FROM dbo.HrApprovalRequests r
       JOIN dbo.HrEmployees req ON req.Id = r.RequesterEmployeeId
+      LEFT JOIN dbo.HrApprovalFlows f ON f.Id = r.FlowId
       LEFT JOIN dbo.HrDepartments d ON d.Id = req.DepartmentId
       LEFT JOIN dbo.HrPositions p ON p.Id = req.PositionId
       WHERE r.Id = @id;
@@ -283,18 +297,57 @@ export async function getApprovalRequestDetail(pool, requestId) {
       .input('requestId', sql.Int, request.Id)
       .query(`
         SELECT h.Id, h.StepNumber, h.ApproverUserId, h.Action, h.Comments, h.ActedAt,
+               h.ActedAt AS CreatedAt,
+               st.Name AS StepName,
                CONCAT(u.FirstName, N' ', u.LastName) AS ApproverName,
                u.Email AS ApproverEmail
         FROM dbo.HrApprovalHistory h
+        JOIN dbo.HrApprovalRequests rq ON rq.Id = h.RequestId
+        LEFT JOIN dbo.HrApprovalSteps st ON st.FlowId = rq.FlowId AND st.StepNumber = h.StepNumber
         LEFT JOIN dbo.UserOrganizations u ON u.UserId = h.ApproverUserId
         WHERE h.RequestId = @requestId
-        ORDER BY h.ActedAt ASC;
+        ORDER BY h.ActedAt ASC, h.Id ASC;
       `)
   ]);
 
   request.steps = stepsRes.recordset;
   request.history = histRes.recordset;
   return request;
+}
+
+function httpError(status, message) {
+  const err = new Error(message);
+  err.status = status;
+  return err;
+}
+
+/**
+ * Whether `userId` may act on the given step of `request`.
+ * Global admins always can; company admins only inside their company; everybody else must match the step approver.
+ */
+export async function canUserActOnStep(pool, request, step, { userId, companyId, isGlobalAdmin = false, isCompanyAdmin = false }) {
+  if (isGlobalAdmin) return true;
+  if (companyId && Number(companyId) !== request.CompanyId) return false;
+  if (isCompanyAdmin) return true;
+
+  const empRes = await pool.request()
+    .input('userId', sql.NVarChar(450), userId)
+    .query('SELECT TOP 1 Id FROM dbo.HrEmployees WHERE UserId = @userId;');
+  const empId = empRes.recordset[0]?.Id ?? null;
+
+  switch (step.ApproverType) {
+    case 'Supervisor': return empId !== null && request.RequesterSupervisorId === empId;
+    case 'DepartmentManager': return empId !== null && request.DepartmentManagerId === empId;
+    case 'SpecificUser': return step.ApproverUserId === userId;
+    case 'Role': {
+      const r = await pool.request()
+        .input('userId', sql.NVarChar(450), userId)
+        .input('roleId', sql.Int, step.ApproverRoleId)
+        .query('SELECT 1 AS ok FROM dbo.UserRoles WHERE UserId = @userId AND RoleId = @roleId;');
+      return r.recordset.length > 0;
+    }
+    default: return false;
+  }
 }
 
 /**
@@ -305,15 +358,44 @@ export async function processApprovalAction(pool, {
   approverUserId,
   action, // 'Aprobado' o 'Rechazado'
   comments = null,
+  companyId = null,
   isGlobalAdmin = false,
   isCompanyAdmin = false
 }) {
-  const request = await getApprovalRequestDetail(pool, requestId);
-  if (!request) throw new Error('Solicitud de aprobación no encontrada.');
-  if (request.Status !== 'Pendiente') throw new Error('Esta solicitud ya ha sido resuelta.');
+  const numericId = Number(requestId);
+  if (!Number.isInteger(numericId) || numericId <= 0) throw httpError(400, 'Identificador de solicitud inválido.');
+
+  const request = await getApprovalRequestDetail(pool, numericId);
+  if (!request || (!isGlobalAdmin && companyId && request.CompanyId !== Number(companyId))) {
+    throw httpError(404, 'Solicitud de aprobación no encontrada.');
+  }
+  if (request.Status !== 'Pendiente') throw httpError(409, 'Esta solicitud ya ha sido resuelta.');
 
   const currentStep = request.steps.find(s => s.StepNumber === request.CurrentStepNumber);
-  if (!currentStep) throw new Error('Paso actual no válido en el flujo.');
+  if (!currentStep) throw httpError(409, 'Paso actual no válido en el flujo.');
+
+  if (!isGlobalAdmin && request.RequesterUserId && request.RequesterUserId === approverUserId) {
+    throw httpError(403, 'No puede aprobar ni rechazar su propia solicitud.');
+  }
+  const allowed = await canUserActOnStep(pool, request, currentStep, {
+    userId: approverUserId, companyId, isGlobalAdmin, isCompanyAdmin
+  });
+  if (!allowed) throw httpError(403, 'No está autorizado para resolver este paso de aprobación.');
+
+  if (action === 'Rechazado' && !String(comments || '').trim()) {
+    throw httpError(400, 'Debe indicar el motivo del rechazo.');
+  }
+
+  // Claim the step atomically so two approvers cannot resolve the same step twice
+  const claim = await pool.request()
+    .input('id', sql.Int, request.Id)
+    .input('step', sql.Int, request.CurrentStepNumber)
+    .query(`
+      UPDATE dbo.HrApprovalRequests SET Status = Status
+      WHERE Id = @id AND Status = N'Pendiente' AND CurrentStepNumber = @step;
+      SELECT @@ROWCOUNT AS affected;
+    `);
+  if (!claim.recordset[0]?.affected) throw httpError(409, 'Esta solicitud ya fue resuelta por otro usuario.');
 
   // Insert approval action
   await pool.request()

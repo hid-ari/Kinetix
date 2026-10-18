@@ -5,7 +5,8 @@ import {
   checkDepartmentCycle,
   createDepartment,
   updateDepartment,
-  toggleDepartmentStatus
+  toggleDepartmentStatus,
+  deleteDepartment
 } from '../repositories/departments.repo.js';
 import { resolveTargetCompanyId, assertCompanyAccess } from '../access.js';
 
@@ -138,6 +139,25 @@ export function createDepartmentsRouter(ctx) {
     } catch (err) {
       console.error('Error toggling department status:', err);
       res.status(err.status || 500).json({ message: err.message || 'Error al cambiar estado del departamento.' });
+    }
+  });
+
+  router.delete('/departments/:id', requirePermission('RRHH Estructura', 'Administrar departamentos y cargos'), async (req, res) => {
+    try {
+      const dept = await getDepartmentById(pool, req.params.id);
+      if (!dept) return res.status(404).json({ message: 'Departamento no encontrado.' });
+      await assertCompanyAccess(pool, req, dept.CompanyId);
+
+      const deleted = await deleteDepartment(pool, dept.Id, dept.CompanyId);
+
+      await writeAudit(req, 'DELETE', 'RRHH Estructura', 'HrDepartment', String(dept.Id), dept.CompanyId, {
+        oldValues: dept
+      });
+
+      res.json({ message: `Departamento "${dept.Name}" eliminado exitosamente.`, deleted });
+    } catch (err) {
+      console.error('Error deleting department:', err);
+      res.status(err.status || 500).json({ message: err.message || 'Error al eliminar departamento.' });
     }
   });
 

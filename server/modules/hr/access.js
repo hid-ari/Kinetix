@@ -11,6 +11,28 @@ export function isCompanyAdmin(req) {
   return req.user?.role === 'Company Admin';
 }
 
+export function isHrManager(req) {
+  return isGlobalAdmin(req) || isCompanyAdmin(req) || ['Director de RRHH', 'Analista de RRHH'].includes(req.user?.role);
+}
+
+/**
+ * Checks if user has company-wide visibility over employees in their company.
+ */
+export async function canViewAllCompanyEmployees(pool, req) {
+  if (isGlobalAdmin(req) || isCompanyAdmin(req)) return true;
+  if (['Director de RRHH', 'Analista de RRHH'].includes(req.user?.role)) return true;
+  const hasPerm = await hasPermission(pool, req.user?.userId, 'RRHH Empleados', 'Ver empleados', req);
+  if (!hasPerm) return false;
+  const restricted = await pool.request()
+    .input('userId', req.user?.userId)
+    .query(`
+      SELECT TOP 1 1 AS scoped
+      FROM dbo.HrAccessScopes
+      WHERE UserId = @userId AND ScopeType IN (N'Sucursal', N'Departamento');
+    `);
+  return !restricted.recordset[0];
+}
+
 /**
  * Checks if user has a specific functional permission
  */
@@ -70,11 +92,12 @@ export async function assertCompanyAccess(pool, req, companyId) {
 export async function assertEmployeeAccess(pool, req, employeeId) {
   if (isGlobalAdmin(req)) return true;
   const empId = Number(employeeId);
+  const canViewAll = await canViewAllCompanyEmployees(pool, req);
 
   const check = await pool.request()
     .input('userId', req.user.userId)
     .input('isGlobal', 0)
-    .input('isCompanyAdmin', isCompanyAdmin(req) ? 1 : 0)
+    .input('isCompanyAdmin', canViewAll ? 1 : 0)
     .input('employeeId', empId)
     .query(`
       SELECT 1 FROM dbo.fn_HrVisibleEmployees(@userId, @isGlobal, @isCompanyAdmin)
@@ -88,3 +111,4 @@ export async function assertEmployeeAccess(pool, req, employeeId) {
   }
   return true;
 }
+

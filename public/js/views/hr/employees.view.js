@@ -1,4 +1,4 @@
-import { state } from '../../core/state.js';
+import { state, hasPermission } from '../../core/state.js';
 import { escapeHtml, initials } from '../../components/utils.js';
 import { breadcrumb, pageHeader } from '../../components/ui.js';
 
@@ -36,17 +36,21 @@ export function employeesView() {
     </option>
   `).join('');
 
-  return `
-    ${breadcrumb([['dashboard', 'Inicio'], ['hr-dashboard', 'Recursos Humanos'], ['hr-employees', 'Empleados']])}
-    ${pageHeader('Gestión de Empleados', 'Administración centralizada de la plantilla laboral, expedientes y ciclo de vida.', `
-      <div class="inline-actions">
+  const actionsHtml = `
+    <div class="inline-actions">
+      ${hasPermission('RRHH Empleados', 'Exportar empleados') ? `
         <button class="secondary" data-action="export-hr-employees" title="Exportar listado a CSV">
           <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
           <span>Exportar CSV</span>
         </button>
-        <button class="primary" data-nav="hr-employee-form">＋ Nuevo empleado</button>
-      </div>
-    `)}
+      ` : ''}
+      ${hasPermission('RRHH Empleados', 'Crear empleados') ? `<button class="primary" data-nav="hr-employee-form">＋ Nuevo empleado</button>` : ''}
+    </div>
+  `;
+
+  return `
+    ${breadcrumb([['dashboard', 'Inicio'], ['hr-dashboard', 'Recursos Humanos'], ['hr-employees', 'Empleados']])}
+    ${pageHeader('Gestión de Empleados', 'Administración centralizada de la plantilla laboral, expedientes y ciclo de vida.', actionsHtml)}
 
     <div class="panel">
       <!-- Filter Toolbar -->

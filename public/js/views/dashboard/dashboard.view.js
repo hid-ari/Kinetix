@@ -1,14 +1,34 @@
 import { state } from '../../core/state.js';
 import { escapeHtml, badge } from '../../components/utils.js';
-import { breadcrumb, pageHeader, currentOptions } from '../../components/ui.js';
+import { breadcrumb, currentOptions } from '../../components/ui.js';
 
 export function dashboard() {
-  const company = state.currentUser?.company || 'tu organización';
+  const user = state.currentUser || {};
+  const userName = `${user.firstName || 'Usuario'}`.trim();
+  const company = user.company || 'Kinetix Group';
   const activeCompanies = state.companies.filter(c => c.status === 'Activa').length;
+  const todayFormatted = new Intl.DateTimeFormat('es-DO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).format(new Date());
   
   return `
     ${breadcrumb([['dashboard', 'Espacio de trabajo'], ['dashboard', company]])}
-    ${pageHeader(company, 'Panel ejecutivo de control operativo, talento y administración.')}
+    
+    <!-- Hero Greeting Banner -->
+    <div class="dashboard-hero-banner">
+      <div class="dashboard-hero-content">
+        <div class="dashboard-hero-badge">
+          <span class="pulse-dot"></span>
+          <span>PANEL EJECUTIVO EN TIEMPO REAL</span>
+        </div>
+        <h1>Hola, ${escapeHtml(userName)} 👋</h1>
+        <p>Bienvenido al centro de mando de <strong>${escapeHtml(company)}</strong>. Supervisa recursos humanos, operaciones de inventario y finanzas corporativas.</p>
+      </div>
+      <div class="dashboard-hero-aside">
+        <div class="hero-date-chip">
+          <svg viewBox="0 0 20 20" fill="currentColor" style="width:16px;height:16px;"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/></svg>
+          <span>${todayFormatted}</span>
+        </div>
+      </div>
+    </div>
     
     <!-- KPI Metrics -->
     <div class="hr-stats-grid">

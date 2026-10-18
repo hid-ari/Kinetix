@@ -215,6 +215,19 @@ export async function saveDepartment(data, id = null) {
 }
 
 /**
+ * Deletes a department
+ */
+export async function deleteDepartment(id) {
+  const res = await fetch(`/api/hr/departments/${id}`, {
+    method: 'DELETE',
+    credentials: 'include'
+  });
+  const result = await res.json();
+  if (!res.ok) throw new Error(result.message || 'Error al eliminar departamento.');
+  return result;
+}
+
+/**
  * Creates / updates position
  */
 export async function savePosition(data, id = null) {
@@ -228,6 +241,19 @@ export async function savePosition(data, id = null) {
   });
   const result = await res.json();
   if (!res.ok) throw new Error(result.message || 'Error al guardar cargo.');
+  return result;
+}
+
+/**
+ * Deletes a position
+ */
+export async function deletePosition(id) {
+  const res = await fetch(`/api/hr/positions/${id}`, {
+    method: 'DELETE',
+    credentials: 'include'
+  });
+  const result = await res.json();
+  if (!res.ok) throw new Error(result.message || 'Error al eliminar cargo.');
   return result;
 }
 
@@ -295,9 +321,10 @@ export async function loadPendingApprovals() {
   const res = await fetch('/api/hr/approvals/pending', { credentials: 'include' });
   if (!res.ok) throw new Error('No fue posible cargar aprobaciones pendientes.');
   const data = await res.json();
-  state.hr.pendingApprovals = data.requests || [];
-  state.hr.pendingApprovalsTotal = data.totalPending || 0;
-  return data;
+  const list = Array.isArray(data) ? data : (data.requests || []);
+  state.hr.pendingApprovals = list;
+  state.hr.pendingApprovalsTotal = Array.isArray(data) ? data.length : (data.totalPending ?? list.length);
+  return list;
 }
 
 /**

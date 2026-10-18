@@ -15,8 +15,8 @@ export async function createNotification(pool, {
   const result = await pool.request()
     .input('companyId', sql.Int, companyId)
     .input('userId', sql.NVarChar(450), userId)
-    .input('title', sql.NVarChar(150), title)
-    .input('message', sql.NVarChar(1000), message)
+    .input('title', sql.NVarChar(150), String(title ?? '').slice(0, 150))
+    .input('message', sql.NVarChar(1000), String(message ?? '').slice(0, 1000))
     .input('category', sql.NVarChar(50), category)
     .input('refType', sql.NVarChar(50), referenceType ? String(referenceType) : null)
     .input('refId', sql.NVarChar(100), referenceId ? String(referenceId) : null)
@@ -79,13 +79,15 @@ export async function listUserNotifications(pool, userId, { page = 1, pageSize =
  * Marks single notification as read
  */
 export async function markNotificationRead(pool, id, userId) {
+  const numericId = Number(id);
+  if (!Number.isSafeInteger(numericId) || numericId <= 0) return undefined;
   const result = await pool.request()
-    .input('id', sql.BigInt, Number(id))
+    .input('id', sql.BigInt, numericId)
     .input('userId', sql.NVarChar(450), userId)
     .query(`
       UPDATE dbo.HrNotifications
-      SET IsRead = 1, ReadAt = SYSUTCDATETIME()
-      OUTPUT INSERTED.Id, INSERTED.IsRead, INSERTED.ReadAt
+      SET IsRead = 1, ReadAt = COALESCE(ReadAt, SYSUTCDATETIME())
+      OUTPUT INSERTED.Id, INSERTED.IsRead, INSERTED.ReadAt, DELETED.IsRead AS WasRead
       WHERE Id = @id AND UserId = @userId;
     `);
   return result.recordset[0];

@@ -132,3 +132,67 @@ export async function toggleDepartmentStatus(pool, departmentId, isActive, userI
     `);
   return result.recordset[0];
 }
+
+export async function deleteDepartment(pool, departmentId, companyId) {
+  const dept = await getDepartmentById(pool, departmentId, companyId);
+  if (!dept) {
+    const err = new Error('Departamento no encontrado.');
+    err.status = 404;
+    throw err;
+  }
+
+  // Verificar si tiene subdepartamentos
+  const subDeptRes = await pool.request()
+    .input('id', sql.Int, departmentId)
+    .query('SELECT COUNT(*) AS count FROM dbo.HrDepartments WHERE ParentDepartmentId = @id;');
+  if (subDeptRes.recordset[0]?.count > 0) {
+    const count = subDeptRes.recordset[0].count;
+    const err = new Error(`No se puede eliminar el departamento porque tiene ${count} subdepartamento(s) dependiente(s). Reasigne o elimine primero los subdepartamentos.`);
+    err.status = 400;
+    throw err;
+  }
+
+  // Verificar si tiene empleados asignados
+  const empRes = await pool.request()
+    .input('id', sql.Int, departmentId)
+    .query('SELECT COUNT(*) AS count FROM dbo.HrEmployees WHERE DepartmentId = @id;');
+  if (empRes.recordset[0]?.count > 0) {
+    const count = empRes.recordset[0].count;
+    const err = new Error(`No se puede eliminar el departamento porque tiene ${count} colaborador(es) asignado(s). Reasigne primero a los colaboradores.`);
+    err.status = 400;
+    throw err;
+  }
+
+  // Verificar si tiene cargos asociados
+  const posRes = await pool.request()
+    .input('id', sql.Int, departmentId)
+    .query('SELECT COUNT(*) AS count FROM dbo.HrPositions WHERE DepartmentId = @id;');
+  if (posRes.recordset[0]?.count > 0) {
+    const count = posRes.recordset[0].count;
+    const err = new Error(`No se puede eliminar el departamento porque tiene ${count} cargo(s) vinculado(s). Reasigne o elimine primero los cargos.`);
+    err.status = 400;
+    throw err;
+  }
+
+  // Verificar flujos de aprobación
+  const flowRes = await pool.request()
+    .input('id', sql.Int, departmentId)
+    .query('SELECT COUNT(*) AS count FROM dbo.HrApprovalFlows WHERE DepartmentId = @id;');
+  if (flowRes.recordset[0]?.count > 0) {
+    const err = new Error('No se puede eliminar el departamento porque tiene flujos de aprobación asociados.');
+    err.status = 400;
+    throw err;
+  }
+
+  // Limpiar alcances de acceso asociados
+  await pool.request()
+    .input('id', sql.Int, departmentId)
+    .query('DELETE FROM dbo.HrAccessScopes WHERE DepartmentId = @id;');
+
+  // Eliminar departamento
+  await pool.request()
+    .input('id', sql.Int, departmentId)
+    .query('DELETE FROM dbo.HrDepartments WHERE Id = @id;');
+
+  return { id: departmentId, code: dept.Code, name: dept.Name };
+}

@@ -1,6 +1,6 @@
 # Guía de Inicialización y Puesta en Marcha — Kinetix Core
 
-Esta documentación contiene la guía paso a paso para instalar, configurar, inicializar la base de datos y ejecutar el entorno de desarrollo y producción de **Kinetix Core**.
+Esta documentación contiene la guía detallada paso a paso para instalar, configurar, inicializar la base de datos, ejecutar migraciones y poner en marcha el entorno de desarrollo y producción de **Kinetix Core**.
 
 ---
 
@@ -8,14 +8,14 @@ Esta documentación contiene la guía paso a paso para instalar, configurar, ini
 
 Antes de iniciar la instalación, asegúrate de contar con los siguientes elementos instalados en tu sistema:
 
-1. **Node.js**: Versión 18.0.0 o superior (con soporte para ES Modules).
-   - Verificación: `node -v`
+1. **Node.js**: Versión 18.0.0 o superior (con soporte nativo para ES Modules).
+   - Verificación en terminal: `node -v`
 2. **Motor de Base de Datos SQL Server**:
    - SQL Server LocalDB (`(localdb)\MSSQLLocalDB`), SQL Server Express o SQL Server Standard/Enterprise.
 3. **ODBC Driver for SQL Server**:
-   - **ODBC Driver 18 for SQL Server** (Obligatorio para conexiones en Windows mediante el driver `msnodesqlv8`).
-4. **Herramienta SQL** (Opcional pero recomendada):
-   - SQL Server Management Studio (SSMS), Azure Data Studio, o la utilidad `sqlcmd`.
+   - **ODBC Driver 18 for SQL Server** (Obligatorio para conexiones en Windows mediante el driver nativo `msnodesqlv8`).
+4. **Herramienta de Gestión SQL** (Opcional pero recomendada):
+   - SQL Server Management Studio (SSMS), Azure Data Studio, o la utilidad de línea de comandos `sqlcmd`.
 
 ---
 
@@ -23,18 +23,25 @@ Antes de iniciar la instalación, asegúrate de contar con los siguientes elemen
 
 ```text
 Kinetix/
-├── app.js                         # Frontend SPA en JavaScript Vanilla
-├── index.html                     # Punto de entrada HTML principal
-├── styles.css                     # Sistema de diseño y estilos CSS
-├── server.js                      # Servidor backend Express y API REST
-├── package.json                   # Dependencias y scripts ejecutables
-├── .env                           # Variables de entorno locales (Privado)
-├── .env.example                   # Plantilla de configuración de variables
-├── database/
-│   └── kinetix_core.sql           # Script de creación de base de datos, tablas y roles
-└── scripts/
-    ├── create-user.mjs            # Script para crear/actualizar usuario admin base
-    └── create-super-admin.mjs      # Script para crear/actualizar usuario Super Admin
+├── server.js                      # Servidor backend Express y API REST Core
+├── package.json                   # Dependencias, scripts ejecutables y suites de prueba
+├── .env                           # Variables de entorno locales (Privado / No compartir)
+├── .env.example                   # Plantilla oficial de variables de entorno
+├── database/                      # Esquemas SQL y migraciones versionadas
+│   ├── kinetix_core.sql           # Script de creación de base de datos base
+│   └── migrations/                # Migraciones SQL idempotentes versionadas (001 a 004)
+├── server/                        # Backend modularizado por dominios
+│   └── modules/
+│       └── hr/                    # Módulo desacoplado de Recursos Humanos (Fases 1 y 2)
+├── public/                        # Directorio raíz estático servido por Express
+│   ├── index.html                 # Shell HTML de la SPA con viewport y fuentes
+│   ├── styles.css                 # Sistema de diseño "Kinetic Precision"
+│   └── js/                        # Arquitectura frontend modular (ES Modules)
+│       ├── app.js                 # Punto de entrada de la aplicación SPA
+│       ├── core/                  # Enrutador, API client, gestión de estado y sesión
+│       ├── components/            # UI, modales, formularios, tablas, badges
+│       └── views/                 # Vistas agrupadas por dominio (admin, hr, dashboard, etc.)
+└── scripts/                       # Herramientas de soporte, migraciones y pruebas automatizadas
 ```
 
 ---
@@ -43,9 +50,10 @@ Kinetix/
 
 ### Paso 1: Instalación de Dependencias
 
-Abre una terminal en el directorio raíz del proyecto (`c:\Users\hidek\Desktop\Git\Kinetix`) y ejecuta:
+Abre una terminal de PowerShell en el directorio raíz del proyecto:
 
-```bash
+```powershell
+cd c:\Users\hidek\Desktop\Git\Kinetix
 npm install
 ```
 
@@ -53,15 +61,15 @@ npm install
 
 ### Paso 2: Configuración del Archivo `.env`
 
-Copia el archivo `.env.example` para crear tu archivo `.env` local:
+Copia el archivo `.env.example` para generar tu archivo `.env` local:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Abre `.env` y ajusta los parámetros de conexión según tu entorno SQL Server:
+Abre `.env` y ajusta los parámetros de conexión según tu configuración de SQL Server:
 
-#### Opción A: Conexión con LocalDB (Autenticación de Windows) — *Recomendado para Dev*
+#### Opción A: Conexión con LocalDB (Autenticación Windows) — *Recomendada para Desarrollo Local*
 ```env
 DB_SERVER=(localdb)\MSSQLLocalDB
 DB_DATABASE=KinetixCore
@@ -87,88 +95,93 @@ PORT=3000
 
 ### Paso 3: Inicialización de la Base de Datos SQL
 
-Ejecuta el script SQL `database/kinetix_core.sql` para crear la base de datos `KinetixCore`, sus tablas principales (`Companies`, `Branches`, `UserOrganizations`, `Roles`, `UserRoles`, `Licenses`), roles por defecto e índices.
+Ejecuta el script SQL `database/kinetix_core.sql` para crear la base de datos `KinetixCore` y sus tablas estructurales (`Companies`, `Branches`, `UserOrganizations`, `Roles`, `Permissions`, `AuditLogs`).
 
-Puedes ejecutar el script mediante:
-
-#### Usando PowerShell / `sqlcmd` (LocalDB):
+#### Mediante `sqlcmd` (PowerShell):
 ```powershell
 sqlcmd -S "(localdb)\MSSQLLocalDB" -i "database\kinetix_core.sql"
 ```
 
-#### Usando SSMS o Azure Data Studio:
-1. Abre **SQL Server Management Studio** o **Azure Data Studio**.
-2. Conéctate a tu servidor SQL Server o `(localdb)\MSSQLLocalDB`.
-3. Abre el archivo `database/kinetix_core.sql`.
-4. Ejecuta el script (**F5**).
-
-#### Paso 3.1: Aplicación de Migraciones (Auditoría y Recursos Humanos)
-
-El sistema cuenta con un motor de migraciones idempotentes que se ejecuta automáticamente al iniciar el servidor, o manualmente mediante:
-
-```powershell
-node scripts/run-migrations.mjs
-```
-
-Esto aplicará:
-- `database/migrations/001_core_audit_hardening.sql`: Trigger `TR_AuditLogs_Immutable`, índices y acciones extendidas.
-- `database/migrations/002_hr_core.sql`: Tablas, catálogos, roles de referencia y funciones de visibilidad de RRHH.
+#### Mediante SSMS o Azure Data Studio:
+1. Conéctate a tu instancia SQL Server o `(localdb)\MSSQLLocalDB`.
+2. Abre el archivo `database/kinetix_core.sql`.
+3. Ejecuta el script (**F5**).
 
 ---
 
-### Paso 4: Creación de Usuarios Iniciales
+### Paso 4: Aplicación de Migraciones Idempotentes
 
-Kinetix Core incluye scripts auxiliares en Node.js para aprovisionar los primeros usuarios administradores en la base de datos.
-
-#### Crear Usuario Administrador Normal:
-Establece la variable de entorno `NEW_USER_PASSWORD` con la contraseña deseada y ejecuta el script:
+Kinetix cuenta con un motor de migraciones versionadas que prepara la base de datos para todas las funciones avanzadas:
 
 ```powershell
-$env:NEW_USER_PASSWORD="AdminPassword123!"
-node scripts/create-user.mjs
+npm run migrate
 ```
 
+Este comando aplica automáticamente en orden secuencial:
+- **`001_core_audit_hardening.sql`**: Trigger inmutable `TR_AuditLogs_Immutable` e índices de auditoría.
+- **`002_hr_core.sql`**: Fase 1 de RRHH (Empleados, Departamentos, Cargos, Historial y Documentos).
+- **`003_hr_approvals_notifications.sql`**: Fase 2 de RRHH (Motor de aprobación multietapa y notificaciones internas).
+- **`004_hr_attendance_vacations.sql`**: Fase 2 de RRHH (Turnos laborales, marcas de asistencia, saldo legal y calendario de vacaciones).
+
+---
+
+### Paso 5: Creación de Usuarios Iniciales
+
+El sistema incluye scripts seguros para aprovisionar los usuarios administradores:
+
 #### Crear Usuario Super Admin:
-Establece la variable de entorno `NEW_SUPER_ADMIN_PASSWORD` (mínimo 10 caracteres) y ejecuta el script:
+Establece la variable `NEW_SUPER_ADMIN_PASSWORD` (mínimo 10 caracteres) y ejecuta:
 
 ```powershell
 $env:NEW_SUPER_ADMIN_PASSWORD="SuperAdminPassword123!"
 node scripts/create-super-admin.mjs
 ```
 
----
+#### Crear Usuario Administrador de Empresa:
+Establece la variable `NEW_USER_PASSWORD` y ejecuta:
 
-### Paso 5: Verificación del Código y Pruebas Automatizadas
-
-Antes de lanzar el servidor, puedes ejecutar la verificación de sintaxis y la suite de pruebas unitarias/integración de Recursos Humanos:
-
-```bash
-# Verificación de sintaxis general
-npm run check
-node --check app.js
-
-# Suite de pruebas automatizadas del Módulo de RRHH (Fase 1)
-node scripts/test-hr-phase1.mjs
-
-# Suite de pruebas automatizadas del Módulo de RRHH (Fase 2: Asistencia, Vacaciones, Aprobaciones, Notificaciones)
-node scripts/test-hr-phase2.mjs
+```powershell
+$env:NEW_USER_PASSWORD="AdminPassword123!"
+node scripts/create-user.mjs
 ```
 
-Esta suite valida:
-- **Fase 1**: Cédula Dominicana (Luhn / Módulo 10), inmutabilidad de auditoría (`UPDATE`/`DELETE` bloqueados), correlativo atómico `EMP-00001`, ciclos jerárquicos y enmascaramiento salarial.
-- **Fase 2**: Registro de entradas/salidas con tolerancia y detección de tardanzas, horas regulares y extras, escala legal dominicana de vacaciones (Art. 177: 14 y 18 días), motor de aprobación multietapa con fallback, deducción automática de balance y sistema de notificaciones in-app.
+---
+
+### Paso 6: Verificación y Pruebas Automatizadas
+
+Antes de iniciar el servicio, verifica la integridad del código ejecutando la suite de pruebas:
+
+```powershell
+# 1. Comprobación de sintaxis
+npm run check
+
+# 2. Pruebas de RRHH Fase 1
+npm run test:phase1
+
+# 3. Pruebas de RRHH Fase 2
+npm run test:phase2
+
+# 4. Pruebas de Integración HTTP End-to-End
+npm run test:usage
+
+# 5. Pruebas de Gestión de Roles y Permisos Dinámicos
+node scripts/test-roles.mjs
+
+# O todas las pruebas en un solo comando:
+npm test
+```
 
 ---
 
-### Paso 6: Arrancar la Aplicación
+### Paso 7: Arrancar la Aplicación
 
 #### Modo Desarrollo:
-```bash
+```powershell
 npm run dev
 ```
 
 #### Modo Producción:
-```bash
+```powershell
 npm start
 ```
 
@@ -176,10 +189,10 @@ npm start
 
 ## 🌐 4. Acceso y Verificación
 
-Una vez iniciado el servidor:
+Una vez que el servidor esté en ejecución:
 
-* **Aplicación Web**: Abre en tu navegador [http://localhost:3000](http://localhost:3000)
-* **API Health Check**: Verifica la salud de la aplicación y la conexión a la base de datos navegando a [http://localhost:3000/api/health](http://localhost:3000/api/health)
+* **Aplicación Web**: [http://localhost:3000](http://localhost:3000)
+* **Health Check API**: [http://localhost:3000/api/health](http://localhost:3000/api/health) — Debe responder `{"connected": true, "databaseName": "KinetixCore"}`.
 
 ---
 
@@ -187,7 +200,8 @@ Una vez iniciado el servidor:
 
 | Problema | Causa Posible | Solución |
 |---|---|---|
-| `Driver={ODBC Driver 18 for SQL Server} not found` | No se encuentra el driver ODBC de SQL Server en Windows. | Descarga e instala **Microsoft ODBC Driver 18 for SQL Server**. |
-| `Faltan DB_USER o DB_PASSWORD en el archivo .env` | `DB_AUTH=sql` pero no se definieron las credenciales en `.env`. | Revisa tu `.env` y asegúrate de configurar `DB_USER` y `DB_PASSWORD` o cambiar `DB_AUTH=windows`. |
-| `Error: EADDRINUSE :::3000` | El puerto 3000 está ocupado por otro proceso. | Cambia la variable `PORT=3001` en `.env` o finaliza el proceso en el puerto 3000. |
-| `No existe una empresa activa para asociar el Super Admin` | No se ha ejecutado el script SQL inicial. | Ejecuta primero `database/kinetix_core.sql` o ejecuta `scripts/create-user.mjs` que crea la empresa base. |
+| `Driver={ODBC Driver 18 for SQL Server} not found` | Falta el driver ODBC oficial en Windows. | Instala **Microsoft ODBC Driver 18 for SQL Server** desde el sitio oficial de Microsoft. |
+| `Faltan DB_USER o DB_PASSWORD en .env` | `DB_AUTH=sql` pero no se configuraron credenciales. | Revisa tu archivo `.env` o cambia a `DB_AUTH=windows` si usas LocalDB. |
+| `Error: EADDRINUSE :::3000` | El puerto 3000 ya está en uso. | Modifica `PORT=3001` en tu `.env` o detén el proceso anterior. |
+| `Error 401 en login o recuperación` | Sesión no inicializada o ruta protegida. | Verifica que las rutas de `/api/auth/*` estén autorizadas en la configuración del servidor. |
+| `No existe una empresa activa para asociar usuario` | La base de datos no tiene datos base. | Ejecuta `database/kinetix_core.sql` o `scripts/create-user.mjs`. |

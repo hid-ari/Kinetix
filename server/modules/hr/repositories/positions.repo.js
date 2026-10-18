@@ -113,3 +113,30 @@ export async function togglePositionStatus(pool, positionId, isActive, userId) {
     `);
   return result.recordset[0];
 }
+
+export async function deletePosition(pool, positionId, companyId) {
+  const pos = await getPositionById(pool, positionId, companyId);
+  if (!pos) {
+    const err = new Error('Cargo no encontrado.');
+    err.status = 404;
+    throw err;
+  }
+
+  // Verificar si tiene colaboradores asignados a este cargo
+  const empRes = await pool.request()
+    .input('id', sql.Int, positionId)
+    .query('SELECT COUNT(*) AS count FROM dbo.HrEmployees WHERE PositionId = @id;');
+  if (empRes.recordset[0]?.count > 0) {
+    const count = empRes.recordset[0].count;
+    const err = new Error(`No se puede eliminar el cargo porque tiene ${count} colaborador(es) asignado(s). Reasigne primero a los colaboradores.`);
+    err.status = 400;
+    throw err;
+  }
+
+  // Eliminar cargo
+  await pool.request()
+    .input('id', sql.Int, positionId)
+    .query('DELETE FROM dbo.HrPositions WHERE Id = @id;');
+
+  return { id: positionId, code: pos.Code, title: pos.Title };
+}

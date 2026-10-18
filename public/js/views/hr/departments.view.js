@@ -1,4 +1,4 @@
-import { state } from '../../core/state.js';
+import { state, hasPermission } from '../../core/state.js';
 import { escapeHtml, badge, initials } from '../../components/utils.js';
 import { breadcrumb, pageHeader } from '../../components/ui.js';
 
@@ -7,9 +7,9 @@ export function departmentsView() {
 
   return `
     ${breadcrumb([['dashboard', 'Inicio'], ['hr-dashboard', 'Recursos Humanos'], ['hr-departments', 'Departamentos']])}
-    ${pageHeader('Departamentos', 'Define y administra la estructura organizativa, jerarquías y responsables de área.', `
-      <button class="primary" data-action="open-department-modal">＋ Nuevo departamento</button>
-    `)}
+    ${pageHeader('Departamentos', 'Define y administra la estructura organizativa, jerarquías y responsables de área.', 
+      hasPermission('RRHH Estructura', 'Administrar departamentos y cargos') ? '<button class="primary" data-action="open-department-modal">＋ Nuevo departamento</button>' : ''
+    )}
 
     <div class="panel">
       <div class="table-wrap">
@@ -58,7 +58,12 @@ export function departmentsView() {
                     ${badge(d.IsActive ? 'Activo' : 'Inactivo')}
                   </td>
                   <td style="text-align:right;">
-                    <button class="row-action" data-action="edit-department" data-id="${d.Id}">Editar</button>
+                    <div style="display:inline-flex; gap:6px; justify-content:flex-end;">
+                      <button class="row-action" data-action="edit-department" data-id="${d.Id}">Editar</button>
+                      ${hasPermission('RRHH Estructura', 'Administrar departamentos y cargos') ? `
+                        <button class="row-action" style="color:var(--danger,#ef4444);" data-action="delete-department" data-id="${d.Id}" data-name="${escapeHtml(d.Name)}">Eliminar</button>
+                      ` : ''}
+                    </div>
                   </td>
                 </tr>
               `;

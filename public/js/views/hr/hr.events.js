@@ -17,7 +17,9 @@ import {
   uploadDocumentVersion,
   deleteEmployeeDocument,
   saveDepartment,
+  deleteDepartment,
   savePosition,
+  deletePosition,
   // Fase 2
   loadTodayAttendance,
   recordCheckIn,
@@ -426,6 +428,38 @@ export function bindHr(renderFn) {
       });
     }
 
+    // Delete Department
+    if (action === 'delete-department') {
+      btn.addEventListener('click', () => {
+        const deptId = btn.dataset.id;
+        const deptName = btn.dataset.name || 'este departamento';
+        const modalBackdrop = showModal(
+          'Eliminar Departamento',
+          `<p>¿Estás seguro de que deseas eliminar el departamento <strong>${escapeHtml(deptName)}</strong>?</p>
+           <p style="color:var(--muted); font-size:12.5px; margin-top:8px;">Esta acción eliminará el registro permanentemente de la estructura organizativa.</p>`,
+          'Eliminar',
+          async () => {
+            try {
+              const res = await deleteDepartment(deptId);
+              toast(res.message || 'Departamento eliminado exitosamente.');
+              await loadHrDepartments();
+              renderFn();
+            } catch (err) {
+              toast(err.message);
+            }
+          }
+        );
+        const confirmBtn = modalBackdrop.querySelector('.modal-confirm');
+        if (confirmBtn) {
+          confirmBtn.classList.remove('primary');
+          confirmBtn.classList.add('danger');
+          confirmBtn.style.background = 'var(--danger, #ef4444)';
+          confirmBtn.style.borderColor = 'var(--danger, #ef4444)';
+          confirmBtn.style.color = '#fff';
+        }
+      });
+    }
+
     // Position Modal
     if (action === 'open-position-modal' || action === 'edit-position') {
       btn.addEventListener('click', () => {
@@ -489,6 +523,38 @@ export function bindHr(renderFn) {
             toast(err.message);
           }
         });
+      });
+    }
+
+    // Delete Position
+    if (action === 'delete-position') {
+      btn.addEventListener('click', () => {
+        const posId = btn.dataset.id;
+        const posTitle = btn.dataset.title || 'este cargo';
+        const modalBackdrop = showModal(
+          'Eliminar Cargo',
+          `<p>¿Estás seguro de que deseas eliminar el cargo <strong>${escapeHtml(posTitle)}</strong>?</p>
+           <p style="color:var(--muted); font-size:12.5px; margin-top:8px;">Esta acción eliminará el registro permanentemente de la estructura ocupacional.</p>`,
+          'Eliminar',
+          async () => {
+            try {
+              const res = await deletePosition(posId);
+              toast(res.message || 'Cargo eliminado exitosamente.');
+              await loadHrPositions();
+              renderFn();
+            } catch (err) {
+              toast(err.message);
+            }
+          }
+        );
+        const confirmBtn = modalBackdrop.querySelector('.modal-confirm');
+        if (confirmBtn) {
+          confirmBtn.classList.remove('primary');
+          confirmBtn.classList.add('danger');
+          confirmBtn.style.background = 'var(--danger, #ef4444)';
+          confirmBtn.style.borderColor = 'var(--danger, #ef4444)';
+          confirmBtn.style.color = '#fff';
+        }
       });
     }
 
@@ -840,11 +906,11 @@ export function bindHr(renderFn) {
     });
   });
 
-  // Modal Solicitar Licencia / Permiso
+    // Modal Solicitar Licencia / Permiso
   document.querySelectorAll('[data-action="hr-open-leave-request"]').forEach(btn => {
     btn.addEventListener('click', () => {
       const types = state.hr.leaveTypes || [];
-      const typeOptions = types.map(t => `<option value="${t.Id}">${escapeHtml(t.Name)} (${t.IsPaid ? 'Con Goce' : 'Sin Goce'}) - Max ${t.DefaultDays || 'N/A'}d</option>`).join('');
+      const typeOptions = types.map(t => `<option value="${t.Id}">${escapeHtml(t.Name)} (${t.IsPaid ? 'Con Goce' : 'Sin Goce'}) - Max ${t.MaxDaysPerYear ?? t.DefaultDays ?? 'N/A'} ${t.Unit === 'Horas' ? 'horas' : 'días'}</option>`).join('');
 
       const body = `
         <div class="form-grid">
@@ -863,7 +929,7 @@ export function bindHr(renderFn) {
             <input type="date" id="leave-end-date" required>
           </div>
           <div class="field">
-            <label>Días Solicitados *</label>
+            <label>Días / Horas Solicitados *</label>
             <input type="number" id="leave-days" min="1" max="90" required value="3">
           </div>
           <div class="field full">
@@ -889,7 +955,7 @@ export function bindHr(renderFn) {
             leaveTypeId,
             startDate,
             endDate,
-            requestedDays: days,
+            duration: days,
             reason
           });
           toast(res.message || 'Solicitud de licencia enviada al flujo de aprobación.');
@@ -988,7 +1054,7 @@ export function bindHr(renderFn) {
             try {
               const res = await processApprovalAction(reqId, 'Aprobado', comments);
               toast(res.message || 'Solicitud aprobada exitosamente.');
-              document.querySelector('.modal-overlay')?.remove();
+              document.querySelector('.modal-backdrop')?.remove();
               await Promise.all([loadPendingApprovals(), loadMyApprovalRequests(), loadVacationBalance()]);
               renderFn();
             } catch (err) {
@@ -1005,7 +1071,7 @@ export function bindHr(renderFn) {
             try {
               const res = await processApprovalAction(reqId, 'Rechazado', comments);
               toast(res.message || 'Solicitud rechazada.');
-              document.querySelector('.modal-overlay')?.remove();
+              document.querySelector('.modal-backdrop')?.remove();
               await Promise.all([loadPendingApprovals(), loadMyApprovalRequests()]);
               renderFn();
             } catch (err) {

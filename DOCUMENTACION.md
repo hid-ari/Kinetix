@@ -1,87 +1,149 @@
-# Kinetix Core
+# Kinetix Core — Documentación Operativa y Arquitectura Técnica
 
-Documentación operativa y técnica del proyecto.
+Documentación técnica, arquitectura modular, flujos de datos y manual operativo de **Kinetix Core**.
 
-## 1. Acceso rápido
+---
 
-- Aplicación local: http://localhost:3000
-- Health check: http://localhost:3000/api/health
-- Carpeta del proyecto: `c:\Users\hidek\Desktop\Kinetix`
-- Base de datos: `KinetixCore`
-- Motor: SQL Server / LocalDB
-- Puerto por defecto: `3000`
+## 1. Acceso Rápido y Entorno
 
-## 2. Estructura del proyecto
+- **Aplicación Web**: [http://localhost:3000](http://localhost:3000)
+- **Health Check API**: [http://localhost:3000/api/health](http://localhost:3000/api/health)
+- **Ruta de Trabajo**: `c:\Users\hidek\Desktop\Git\Kinetix`
+- **Base de Datos**: `KinetixCore`
+- **Motor SQL**: Microsoft SQL Server / LocalDB (`(localdb)\MSSQLLocalDB`)
+- **Driver de Conexión**: `msnodesqlv8` (Windows Auth) o `mssql` nativo (SQL Auth)
+- **Puerto por defecto**: `3000`
+
+---
+
+## 2. Estructura Arquitectónica del Proyecto
+
+Kinetix Core implementa una arquitectura desacoplada de dos capas (Backend modular en Node.js + Frontend SPA en Vanilla JS con arquitectura de componentes y estado reactivo liviano):
 
 ```text
 Kinetix/
-├── app.js                         Frontend SPA en JavaScript vanilla
-├── index.html                     Documento HTML principal
-├── styles.css                     Estilos de la aplicación
-├── server.js                     API Express y servidor web
-├── package.json                   Scripts y dependencias Node.js
-├── package-lock.json              Versiones bloqueadas de dependencias
-├── .env                           Configuración local, no publicar
-├── .env.example                   Plantilla de configuración
-├── database/
-│   └── kinetix_core.sql           Esquema y datos base de SQL Server
-└── scripts/
-    └── create-user.mjs            Crea o actualiza el usuario administrador
+├── server.js                      # Servidor Express, middleware de seguridad, sesiones y Core API
+├── package.json                   # Dependencias, scripts de testing y migración
+├── .env                           # Variables de entorno locales (Excluido de Git)
+├── .env.example                   # Plantilla de configuración de variables de entorno
+├── database/                      # Esquemas SQL y migraciones versionadas
+│   ├── kinetix_core.sql           # Esquema base (Empresas, Usuarios, Sucursales, Roles)
+│   └── migrations/                # Migraciones idempotentes versionadas
+│       ├── 001_core_audit_hardening.sql       # Trigger de inmutabilidad en AuditLogs
+│       ├── 002_hr_core.sql                    # Fase 1 RRHH: Empleados, Departamentos, Cargos
+│       ├── 003_hr_approvals_notifications.sql # Fase 2: Flujos multietapa y notificaciones
+│       └── 004_hr_attendance_vacations.sql    # Fase 2: Asistencia, turnos, ponches y vacaciones
+├── server/                        # Módulos desacoplados del backend
+│   └── modules/
+│       └── hr/                    # Módulo integral de Recursos Humanos
+│           ├── index.js           # Registro y montaje del router en /api/hr
+│           ├── access.js          # Control de acceso y verificación de permisos
+│           ├── employee-context.js# Vinculación usuario-empleado en sesión
+│           ├── migrate.js         # Ejecutor de migraciones de RRHH
+│           ├── storage.js         # Almacenamiento seguro y versionado de documentos
+│           ├── validators.js      # Validación de cédula (Luhn), salarios, etc.
+│           ├── repositories/      # Capa de acceso a datos SQL (Data Access Layer)
+│           │   ├── approvals.repo.js
+│           │   ├── attendance.repo.js
+│           │   ├── departments.repo.js
+│           │   ├── documents.repo.js
+│           │   ├── employees.repo.js
+│           │   ├── notifications.repo.js
+│           │   ├── orgchart.repo.js
+│           │   ├── positions.repo.js
+│           │   └── vacations.repo.js
+│           ├── routes/            # Controladores y definición de endpoints REST
+│           │   ├── approvals.routes.js
+│           │   ├── attendance.routes.js
+│           │   ├── catalogs.routes.js
+│           │   ├── dashboard.routes.js
+│           │   ├── departments.routes.js
+│           │   ├── documents.routes.js
+│           │   ├── employees.routes.js
+│           │   ├── notifications.routes.js
+│           │   ├── orgchart.routes.js
+│           │   ├── positions.routes.js
+│           │   └── vacations.routes.js
+│           └── services/          # Lógica de negocio (Business Logic Layer)
+│               ├── approval-engine.service.js
+│               ├── attendance.service.js
+│               ├── notification.service.js
+│               ├── pdf.service.js
+│               └── vacation-balance.service.js
+├── public/                        # Raíz estática del Frontend SPA
+│   ├── index.html                 # Shell HTML con viewport responsive y tipografía Inter
+│   ├── styles.css                 # Sistema de diseño "Kinetic Precision" (Tokens HSL, Dark Mode)
+│   └── js/                        # Código frontend modular en ES Modules
+│       ├── app.js                 # Inicializador del SPA, enrutador y render principal
+│       ├── core/                  # Núcleo del frontend
+│       │   ├── api.js             # Cliente HTTP, carga optimizada de datos y caché
+│       │   ├── auth.js            # Control de sesión, permisos y estado de usuario
+│       │   ├── events.js          # Bus global de eventos y suscripciones
+│       │   ├── router.js          # Manejo de rutas SPA hash-based (#/ruta)
+│       │   └── state.js           # Almacén reactivo de estado en memoria
+│       ├── components/            # Componentes visuales reutilizables
+│       │   ├── alerts.js          # Notificaciones toast y mensajes del sistema
+│       │   ├── forms.js           # Controles de formulario, inputs y validadores
+│       │   ├── modal.js           # Ventanas modales accesibles con foco
+│       │   ├── tables.js          # Tablas con paginación, filtros y ordenamiento
+│       │   └── ui.js              # Navbar, Sidebar, Badges, Botones y Shell
+│       └── views/                 # Vistas agrupadas por dominio funcional
+│           ├── admin/             # Empresas, Usuarios, Sucursales, Roles, Permisos, Auditoría
+│           ├── auth/              # Login, Recuperación de Contraseña, Perfil
+│           ├── dashboard/         # Dashboard Ejecutivo general
+│           ├── finance/           # Módulo de Finanzas (Cuentas, Gastos, Presupuesto)
+│           ├── hr/                # Módulo RRHH (Empleados, Asistencia, Vacaciones, Aprobaciones)
+│           └── inventory/         # Módulo de Inventario (Productos, Almacenes, Movimientos)
+├── scripts/                       # Herramientas de automatización y testing
+│   ├── clean-database.mjs         # Reset y limpieza controlada de base de datos
+│   ├── create-super-admin.mjs     # Aprovisionamiento seguro del Super Admin
+│   ├── create-user.mjs            # Aprovisionamiento seguro de administradores
+│   ├── run-migrations.mjs         # Ejecutor manual de todas las migraciones SQL
+│   ├── sql-query.mjs              # Utilidad CLI para consultas SQL rápidas
+│   ├── test-hr-phase1.mjs         # Pruebas automatizadas RRHH Fase 1
+│   ├── test-hr-phase2.mjs         # Pruebas automatizadas RRHH Fase 2
+│   ├── test-hr-usage.mjs          # Pruebas de integración HTTP End-to-End
+│   └── test-roles.mjs             # Pruebas completas de Roles y Permisos dinámicos
+└── storage/                       # Almacenamiento seguro en disco (Documentos y expedientes)
 ```
 
-## 3. Documentos importantes
+---
 
-| Documento | Ubicación | Uso |
-|---|---|---|
-| Guía de inicialización | [GUIA_INICIALIZACION.md](GUIA_INICIALIZACION.md) | Paso a paso detallado para instalación, base de datos y arranque |
-| Frontend | [app.js](app.js) | Estado, vistas, formularios y llamadas API |
-| HTML principal | [index.html](index.html) | Punto de entrada del navegador |
-| Estilos | [styles.css](styles.css) | Diseño responsive y componentes visuales |
-| Backend | [server.js](server.js) | API, autenticación, sesiones y SQL |
-| Esquema SQL | [database/kinetix_core.sql](database/kinetix_core.sql) | Tablas, relaciones, índices, roles y permisos |
-| Creación de usuario | [scripts/create-user.mjs](scripts/create-user.mjs) | Alta o actualización del usuario administrador |
-| Dependencias | [package.json](package.json) | Scripts npm y paquetes |
-| Configuración de ejemplo | [.env.example](.env.example) | Variables necesarias para ejecutar el proyecto |
-| Configuración local | `.env` | Valores reales de la máquina local; no compartir ni subir al repositorio |
+## 3. Guía de Instalación y Puesta en Marcha
 
-## 4. Instalación y ejecución
+### Requisitos Previos:
+- **Node.js**: v18.0.0 o superior con soporte ES Modules (`"type": "module"`).
+- **SQL Server**: LocalDB, Express, Standard o Enterprise.
+- **ODBC Driver 18 for SQL Server**: Obligatorio en entornos Windows con autenticación integrada.
 
-Requisitos:
-
-- Node.js con soporte para módulos ES.
-- SQL Server o SQL Server LocalDB.
-- ODBC Driver 18 for SQL Server cuando se usa autenticación Windows.
-
-Instalar dependencias:
+### Pasos de Ejecución:
 
 ```powershell
-cd C:\Users\hidek\Desktop\Kinetix
+# 1. Posicionarse en el directorio del proyecto
+cd c:\Users\hidek\Desktop\Git\Kinetix
+
+# 2. Instalar dependencias
 npm install
-```
 
-Comprobar sintaxis:
-
-```powershell
+# 3. Comprobar sintaxis
 npm run check
-node --check app.js
+
+# 4. Ejecutar migraciones de base de datos
+npm run migrate
+
+# 5. Ejecutar la suite completa de pruebas
+npm run test
+node scripts/test-roles.mjs
+
+# 6. Iniciar el servidor en modo desarrollo
+npm run dev
 ```
 
-Iniciar la aplicación:
+---
 
-```powershell
-npm start
-```
+## 4. Configuración de Entorno (`.env`)
 
-Abrir en el navegador:
-
-```text
-http://localhost:3000
-```
-
-## 5. Configuración `.env`
-
-Configuración recomendada para LocalDB:
-
+### LocalDB con Autenticación de Windows (Recomendado para Desarrollo):
 ```env
 DB_SERVER=(localdb)\MSSQLLocalDB
 DB_DATABASE=KinetixCore
@@ -90,312 +152,148 @@ DB_TRUST_SERVER_CERTIFICATE=true
 PORT=3000
 ```
 
-Configuración para SQL Server con usuario y contraseña:
-
+### SQL Server con Autenticación SQL:
 ```env
 DB_SERVER=localhost
 DB_PORT=1433
 DB_DATABASE=KinetixCore
 DB_AUTH=sql
 DB_USER=sa
-DB_PASSWORD=REEMPLAZAR
+DB_PASSWORD=TuPasswordSeguro123!
 DB_ENCRYPT=false
 DB_TRUST_SERVER_CERTIFICATE=true
 PORT=3000
 ```
 
-Notas:
+---
 
-- `.env` contiene configuración local y debe permanecer fuera del control de versiones.
-- No copiar contraseñas, tokens ni cadenas de conexión reales en documentación pública.
-- `DB_AUTH=windows` usa `msnodesqlv8` y conexión confiable.
-- El servidor limpia el pool si la primera conexión SQL falla y permite reintentar.
+## 5. Módulo de Recursos Humanos (Fases 1 y 2)
 
-## 6. Base de datos
+El módulo de Recursos Humanos proporciona una solución de nivel empresarial adaptada a la legislación dominicana (Código de Trabajo de la Rep. Dom. y Ley 87-01).
 
-Script principal:
+### 5.1. Estructura y Vistas de RRHH
 
-[database/kinetix_core.sql](database/kinetix_core.sql)
+| Vista | Ruta SPA | Descripción |
+|---|---|---|
+| **Dashboard de Recursos Humanos** | `#/hr-dashboard` | Métricas ejecutivas, nómina consolidada, distribución por departamento y cumpleaños. |
+| **Directorio de Colaboradores** | `#/hr-employees` | Listado paginado con búsqueda, filtros, badges cromáticos y exportación a CSV. |
+| **Expediente Digital** | `#/hr-employee-detail` | Ficha personal, reposición de contratos/certificados, historial laboral y dossier PDF. |
+| **Formulario de Empleado** | `#/hr-employee-form` | Alta/edición con validación Luhn de cédula y código correlativo `EMP-00001`. |
+| **Terminal de Asistencia** | `#/hr-attendance` | Ponche de entrada/salida geolocalizado, cálculo de tardanzas y horas extras. |
+| **Gestión de Vacaciones** | `#/hr-vacations` | Escala legal (Art. 177: 14 y 18 días), solicitud de permisos y calendario laboral. |
+| **Bandeja de Aprobaciones** | `#/hr-approvals` | Flujos multietapa, resolución individual o masiva con notas de auditoría. |
+| **Portal del Colaborador** | `#/hr-portal` | Autoservicio: marcaje rápido, consulta de balances, solicitudes y notificaciones. |
+| **Departamentos y Árbol** | `#/hr-departments` | Jerarquía organizacional con prevención estricta de ciclos recursivos. |
+| **Cargos y Compensación** | `#/hr-positions` | Niveles jerárquicos y bandas salariales en DOP (mínimo vs máximo). |
+| **Organigrama Interactivo** | `#/hr-orgchart` | Diagrama en árbol con directores de área y personal asignado. |
 
-Tablas principales:
+### 5.2. Servicios y Reglas de Negocio de RRHH
 
-- `Companies`: empresas y datos de contacto.
-- `Branches`: sucursales por empresa.
-- `UserOrganizations`: usuarios, organización, contraseña y estado.
-- `Roles`: roles del sistema y personalizados.
-- `UserRoles`: relación usuarios-roles.
-- `Permissions`: catálogo de permisos.
-- `RolePermissions`: relación roles-permisos.
-- `AuditLogs`: actividad y cambios administrativos.
+1. **Inmutabilidad de Auditoría (`TR_AuditLogs_Immutable`)**:
+   - Bloqueo total de sentencias `UPDATE` y `DELETE` sobre `dbo.AuditLogs`.
+2. **Validación Algorítmica de Cédula Dominicana**:
+   - Algoritmo de Luhn (módulo 10) para cédulas dominicanas (11 dígitos).
+3. **Escala Legal de Vacaciones (Art. 177 CT-RD)**:
+   - Antigüedad < 1 año: proporcional según meses de servicio.
+   - Antigüedad de 1 a 5 años: 14 días laborables remunerados.
+   - Antigüedad > 5 años: 18 días laborables remunerados.
+4. **Motor de Aprobaciones Multinivel**:
+   - Etapa 1: Supervisor inmediato del colaborador.
+   - Etapa 2: Gerente de Departamento o Director de RRHH.
+   - Fallback automático si el supervisor no está asignado o es el solicitante.
+   - Prohibición estricta de auto-aprobación (`403 Forbidden`).
+5. **Ofuscación y Protección Salarial**:
+   - Usuarios sin el permiso explícito reciben cédulas ofuscadas (`40*********1-2`), teléfonos protegidos (`809***1234`) y salarios enmascarados.
 
-Vista principal:
+---
 
-- `dbo.vw_CompaniesList`: conteos de usuarios y sucursales por empresa.
+## 6. Endpoints REST de la API
 
-Relaciones relevantes:
+### Rutas Base y Autenticación
+| Método | Endpoint | Descripción |
+|---|---|---|
+| `GET` | `/api/health` | Estado del servidor y conectividad con la base de datos |
+| `POST` | `/api/auth/login` | Autenticación con cookie `HttpOnly` |
+| `POST` | `/api/auth/logout` | Cierre de sesión y revocación de token |
+| `GET` | `/api/profile` | Datos del usuario y roles de la sesión actual |
+| `PUT` | `/api/profile` | Actualización de perfil personal |
+| `POST` | `/api/auth/change-password` | Cambio seguro de contraseña |
+| `POST` | `/api/auth/forgot-password` | Solicitud de restablecimiento de contraseña |
+| `POST` | `/api/auth/reset-password` | Aplicación de token de restablecimiento |
 
-```text
-Companies 1 ─── N Branches
-Companies 1 ─── N UserOrganizations
-UserOrganizations N ─── N Roles
-Roles N ─── N Permissions
-UserOrganizations 1 ─── N AuditLogs
-```
+### Administración y Seguridad
+| Método | Endpoint | Descripción |
+|---|---|---|
+| `GET` / `POST` | `/api/companies` | Gestión de empresas |
+| `PUT` / `PATCH` | `/api/companies/:id` | Modificación y activación/desactivación de empresas |
+| `GET` / `POST` | `/api/users` | Gestión de usuarios de la organización |
+| `PUT` / `PATCH` | `/api/users/:id` | Actualización y estado de usuarios |
+| `GET` / `POST` | `/api/roles` | Catálogo de roles (protección de roles esenciales del sistema) |
+| `PUT` / `DELETE` | `/api/roles/:id` | Modificación y eliminación de roles personalizados |
+| `GET` | `/api/permissions` | Catálogo completo de 55 permisos del sistema |
+| `GET` / `PUT` | `/api/roles/:id/permissions` | Consulta y asignación granular de permisos a roles |
+| `GET` | `/api/audit` | Trazabilidad con filtros por texto, módulo y acción |
 
-Importante: el script SQL base crea tablas e inserta datos iniciales. No debe ejecutarse repetidamente sobre una base ya inicializada sin convertirlo antes en migraciones idempotentes.
+### Recursos Humanos (`/api/hr/*`)
+| Método | Endpoint | Descripción |
+|---|---|---|
+| `GET` | `/api/hr/dashboard` | Indicadores clave (KPIs), métricas y nómina |
+| `GET` | `/api/hr/catalogs` | Catálogos unificados de RRHH |
+| `GET` / `POST` | `/api/hr/employees` | Listado paginado y alta transaccional de colaboradores |
+| `GET` / `PUT` | `/api/hr/employees/:id` | Detalle y edición de colaborador |
+| `GET` | `/api/hr/employees/:id/pdf` | Streaming de expediente oficial en PDF |
+| `GET` | `/api/hr/employees/:id/history` | Historial inmutable de movimientos laborales |
+| `POST` | `/api/hr/employees/:id/salary` | Modificación auditada de compensación salarial |
+| `POST` | `/api/hr/employees/:id/promote` | Registro de ascenso de cargo |
+| `POST` | `/api/hr/employees/:id/transfer`| Reubicación de departamento o sucursal |
+| `POST` | `/api/hr/employees/:id/terminate`| Desvinculación laboral con motivo registrado |
+| `GET` / `POST` | `/api/hr/employees/:id/documents`| Carga y gestión documental de expedientes |
+| `GET` | `/api/hr/documents/:id/download`| Descarga con control de confidencialidad |
+| `GET` / `POST` | `/api/hr/attendance/today` | Consulta de turno y ponche de entrada/salida |
+| `POST` | `/api/hr/attendance/requests`| Solicitud de justificación o corrección de marca |
+| `GET` | `/api/hr/vacations/balance` | Saldo legal y disponible de vacaciones |
+| `POST` | `/api/hr/vacations/requests`| Solicitud de período vacacional |
+| `GET` / `POST` | `/api/hr/leaves/requests` | Registro y solicitud de permisos/licencias |
+| `GET` | `/api/hr/approvals/pending` | Bandeja de solicitudes pendientes de aprobación |
+| `POST` | `/api/hr/approvals/:id/step`| Aprobación o rechazo de etapa de flujo |
+| `GET` | `/api/hr/notifications` | Notificaciones in-app del colaborador |
+| `PATCH`| `/api/hr/notifications/:id/read`| Marcado de notificación como leída |
 
-## 7. Usuario administrador
+---
 
-Script:
+## 7. Sistema de Diseño Visual "Kinetic Precision"
+
+El sistema de diseño visual corporativo se encuentra unificado en `public/styles.css`. Para consultar la especificación exhaustiva de tokens, paleta cromática, tipografía, componentes y reglas de interfaz, consulte [LINEA_GRAFICA.md](LINEA_GRAFICA.md).
+
+Características principales:
+- **Paleta Cromática Semántica**: Tokens CSS institucionales y semánticos (`--royal`, `--emerald`, `--amber`, `--red`, `--purple`, etc.).
+- **Jerarquía Tipográfica**: Combinación de `Inter` (cuerpo e interfaz) y `Plus Jakarta Sans` (display y marcas).
+- **Micro-interacciones y Animaciones**: Transiciones de 150ms-250ms con curvas cúbicas suaves, efectos hover y elevaciones consistentes.
+- **Contraste y Legibilidad**: Navegación lateral en Deep Obsidian y espacio de trabajo de alta luminosidad.
+- **Totalmente Responsive**: Soporte completo para dispositivos móviles, tablets y monitores de alta resolución.
+
+---
+
+## 8. Verificación y Testing Automatizado
+
+Kinetix cuenta con una suite completa de pruebas automáticas:
 
 ```powershell
-$env:NEW_USER_PASSWORD = "CambiarEstaPassword"
-node scripts/create-user.mjs
-```
-
-El script crea o actualiza:
-
-- Usuario: `hideki-ariyama`
-- Empresa: `Kinetrix`
-- Rol: `Company Admin`
-- Email definido dentro del script
-
-Cambiar la contraseña temporal antes de usar el sistema en un entorno real.
-
-## 8. API
-
-### Rutas públicas
-
-| Método | Ruta | Descripción |
-|---|---|---|
-| `GET` | `/api/health` | Comprueba conexión con SQL Server |
-| `POST` | `/api/auth/login` | Inicia sesión y crea cookie HttpOnly |
-
-### Autenticación
-
-| Método | Ruta | Descripción |
-|---|---|---|
-| `POST` | `/api/auth/logout` | Invalida la sesión actual |
-| `POST` | `/api/auth/change-password` | Cambia la contraseña verificando la actual |
-
-### Empresas
-
-| Método | Ruta | Descripción |
-|---|---|---|
-| `GET` | `/api/companies?page=1&pageSize=20` | Listado paginado y búsqueda disponible en API |
-| `POST` | `/api/companies` | Crea una empresa; requiere administrador |
-| `PUT` | `/api/companies/:id` | Edita una empresa; requiere administrador |
-| `PATCH` | `/api/companies/:id/status` | Activa o desactiva una empresa |
-
-### Usuarios
-
-| Método | Ruta | Descripción |
-|---|---|---|
-| `GET` | `/api/users` | Lista usuarios y su rol principal |
-| `POST` | `/api/users` | Crea usuario, hash y asignación de rol |
-| `PUT` | `/api/users/:id` | Edita datos básicos |
-| `PATCH` | `/api/users/:id/status` | Activa o desactiva usuario |
-
-### Perfil
-
-| Método | Ruta | Descripción |
-|---|---|---|
-| `GET` | `/api/profile` | Carga el perfil de la sesión actual |
-| `PUT` | `/api/profile` | Actualiza nombre, email y teléfono |
-
-### Sucursales
-
-| Método | Ruta | Descripción |
-|---|---|---|
-| `GET` | `/api/branches` | Lista sucursales |
-| `POST` | `/api/branches` | Crea una sucursal; requiere administrador |
-
-### Roles y permisos
-
-| Método | Ruta | Descripción |
-|---|---|---|
-| `GET` | `/api/roles` | Lista roles activos |
-| `POST` | `/api/roles` | Crea un rol; requiere administrador |
-| `GET` | `/api/permissions` | Lista permisos disponibles |
-| `GET` | `/api/roles/:id/permissions` | Consulta permisos asignados |
-| `PUT` | `/api/roles/:id/permissions` | Reemplaza asignaciones; requiere administrador |
-
-### Auditoría
-
-| Método | Ruta | Descripción |
-|---|---|---|
-| `GET` | `/api/audit` | Lista auditoría y permite filtrar por `search`, `module` y `action` |
-
-Ejemplo:
-
-```text
-/api/audit?search=Hideki&module=Acceso&action=LOGIN
-```
-
-## 9. Sesiones y seguridad
-
-- La sesión usa cookie `kinetix_session`.
-- La cookie es `HttpOnly`, `SameSite=Lax`, `Path=/` y `Secure` en producción.
-- Duración actual: 8 horas.
-- Las sesiones se guardan en `dbo.UserSessions`; el navegador conserva únicamente un token HttpOnly y la base almacena su hash.
-- Las sesiones sobreviven reinicios y permiten múltiples instancias del servidor usando la misma base de datos.
-- Las rutas API requieren autenticación salvo health y login.
-- Las operaciones administrativas requieren rol `Super Admin` o `Company Admin`.
-- El backend usa consultas parametrizadas para entradas SQL.
-- Las contraseñas se almacenan con PBKDF2-SHA512, salt aleatorio y 310000 iteraciones.
-- Se registran headers básicos: `X-Content-Type-Options`, `X-Frame-Options` y `Referrer-Policy`.
-
-## 10. Flujo de carga del frontend
-
-1. El navegador abre `/`.
-2. El usuario envía email y contraseña a `/api/auth/login`.
-3. El backend crea la cookie de sesión.
-4. `app.js` carga empresas, usuarios, sucursales, roles, permisos, auditoría y perfil.
-5. Si un recurso obligatorio falla, la interfaz identifica el módulo en el mensaje.
-6. Los permisos son opcionales para no bloquear todo el workspace si la tabla no está disponible.
-
-## 11. Funcionalidades implementadas
-
-- Login con sesión de servidor.
-- Logout.
-- Cambio de contraseña.
-- Perfil editable.
-- Listado paginado de empresas.
-- Creación y edición de empresas.
-- Activación y desactivación de empresas.
-- Listado y creación de usuarios.
-- Edición y cambio de estado de usuarios.
-- Listado y creación de sucursales.
-- Detalle de sucursales.
-- Listado y creación de roles.
-- Asignación persistente de permisos.
-- Auditoría de login, creación, actualización, activación y cambios de contraseña.
-- Filtros de auditoría por texto, módulo y acción.
-- Escape de valores dinámicos en varias vistas del frontend.
-
-## 12. Módulo de Recursos Humanos (Talento Humano) — Fase 1
-
-El módulo de Recursos Humanos proporciona una gestión integral, modular y conforme a la normativa laboral de la República Dominicana (cédula con módulo 10/Luhn, confidencialidad y expedientes digitales).
-
-### Componentes y Vistas
-- **Dashboard de Talento Humano (`/hr-dashboard`)**: Tarjetas de métricas KPI (plantilla total, colaboradores activos, suspendidos, licencias), costo de nómina base consolidada, distribución por departamento y modalidad de contrato, sucursales y cumpleaños del mes.
-- **Gestión de Empleados (`/hr-employees`)**: Listado paginado con búsqueda por nombre, código o documento, filtros por estado, departamento y sucursal, badges cromáticos ejecutivos y exportación formal a CSV.
-- **Expediente Digital del Empleado (`/hr-employee-detail`)**:
-  - *Resumen Ejecutivo*: Ficha personal, datos de contacto, condiciones contractuales y compensación.
-  - *Repositorio Digital de Documentos*: Carga y versionado de contratos, certificaciones y documentos (PDF, Word, Excel, imágenes) con almacenamiento físico seguro (`storage/hr/<companyId>/docs/`) y soporte para documentos confidenciales.
-  - *Historial Laboral Inmutable*: Trazabilidad completa con línea de tiempo y registro de valores anteriores y posteriores (`FromSalary` -> `ToSalary`, cambios de cargo, departamento y estado).
-  - *Ficha PDF Oficial*: Generación y streaming de dossier formal en PDF con PDFKit (`/api/hr/employees/:id/pdf`).
-- **Formulario de Empleado (`/hr-employee-form`)**: Alta y edición en 5 secciones con validación algorítmica de cédula dominicana y generación correlativa atómica de código (`EMP-00001`).
-- **Estructura Departamental (`/hr-departments`)**: Administración de unidades con árbol jerárquico, cálculo dinámico de colaboradores y prevención automática de ciclos (`checkDepartmentCycle`).
-- **Cargos y Perfiles (`/hr-positions`)**: Catálogo de puestos con niveles jerárquicos (1 a 15) y bandas salariales mínima y máxima en DOP.
-- **Organigrama General (`/hr-orgchart`)**: Visualización jerárquica con unidades, responsables de área (con icono distintivo) y personal adscrito con foto/avatar.
-
-### Endpoints de API REST (`/api/hr`)
-- `GET /api/hr/dashboard` — Métricas y KPIs consolidados.
-- `GET /api/hr/catalogs` — Catálogos de contrato, modalidad, documentos y causales de desvinculación.
-- `GET /api/hr/departments` / `POST /api/hr/departments` / `PUT /api/hr/departments/:id` — Departamentos.
-- `GET /api/hr/positions` / `POST /api/hr/positions` / `PUT /api/hr/positions/:id` — Cargos y bandas.
-- `GET /api/hr/org-chart` — Estructura organizativa.
-- `GET /api/hr/employees` — Listado con paginación, filtros y ofuscación de datos sensibles/salariales.
-- `POST /api/hr/employees` — Registro transaccional con movimiento inicial de ingreso y auditoría.
-- `GET /api/hr/employees/:id` — Detalle del colaborador.
-- `PUT /api/hr/employees/:id` — Modificación de información del colaborador.
-- `GET /api/hr/employees/:id/pdf` — Generación de expediente formal en PDF.
-- `GET /api/hr/employees/:id/history` — Historial de movimientos laborales.
-- `POST /api/hr/employees/:id/transfer` — Transferencia de sucursal/departamento.
-- `POST /api/hr/employees/:id/promote` — Ascenso de cargo o compensación.
-- `POST /api/hr/employees/:id/salary` — Ajuste salarial auditado.
-- `POST /api/hr/employees/:id/suspend` — Suspensión laboral.
-- `POST /api/hr/employees/:id/leave` — Licencia médica o personal.
-- `POST /api/hr/employees/:id/reactivate` — Reincorporación o reactivación.
-- `POST /api/hr/employees/:id/terminate` — Desvinculación definitiva.
-- `GET /api/hr/employees/:id/documents` / `POST /api/hr/employees/:id/documents` — Expediente digital.
-- `POST /api/hr/documents/:id/versions` — Nueva versión de documento existente.
-- `GET /api/hr/documents/:id/download` — Descarga segura con verificación de permisos y confidencialidad.
-- `DELETE /api/hr/documents/:id` — Eliminación lógica archivada del expediente.
-
-### Seguridad y Blindaje de Auditoría
-- **Trigger `TR_AuditLogs_Immutable`**: Bloqueo absoluto de `UPDATE` y `DELETE` sobre `dbo.AuditLogs`.
-- **Protección de Datos Sensibles**: Si el usuario no tiene permisos (`RRHH Empleados|Ver datos sensibles` y `Ver información salarial`), el backend ofusca automáticamente la cédula (`40*********1-2`), enmascara teléfonos (`809***1234`), y omite salario, fecha de nacimiento y dirección.
-
-## 12. Pendientes importantes
-
-- Aplicar aislamiento por `CompanyId` a todas las consultas y mutaciones.
-- Añadir el campo de contraseña al formulario de creación de usuarios.
-- Reemplazar datos escapados en estado por datos crudos y escapar solo al renderizar.
-- Completar filtros de empresas, usuarios y sucursales con parámetros de API.
-- Cargar empresas, sucursales y roles dinámicamente en el formulario de usuarios.
-- Cargar las asignaciones actuales antes de editar permisos.
-- Hacer transaccional el cambio de datos y su auditoría.
-- Mover sesiones a Redis o almacenamiento persistente en producción.
-- Registrar intentos fallidos de login.
-- Añadir recuperación de contraseña.
-- Añadir edición completa de sucursales y eliminación lógica.
-- Crear migraciones SQL idempotentes.
-- Añadir pruebas unitarias, de integración API y de navegador.
-- Añadir rate limiting, CSP y logging estructurado.
-- Añadir exportación de auditoría.
-
-## 13. Comprobaciones rápidas
-
-```powershell
+# 1. Chequeo de sintaxis
 npm run check
-node --check app.js
+
+# 2. Pruebas de RRHH Fase 1 (Cédula, Inmutabilidad, Correlativos, Privacidad)
+npm run test:phase1
+
+# 3. Pruebas de RRHH Fase 2 (Asistencia, Vacaciones, Aprobaciones, Notificaciones)
+npm run test:phase2
+
+# 4. Pruebas de integración HTTP End-to-End
+npm run test:usage
+
+# 5. Pruebas de Roles y Permisos Dinámicos
+node scripts/test-roles.mjs
+
+# 6. Ejecución unificada de pruebas
+npm test
 ```
-
-Comprobar API:
-
-```powershell
-Invoke-WebRequest http://localhost:3000/api/health -UseBasicParsing
-```
-
-Resultado esperado:
-
-```json
-{
-  "connected": true,
-  "databaseName": "KinetixCore"
-}
-```
-
-Una ruta protegida sin sesión debe devolver `401`:
-
-```powershell
-Invoke-WebRequest http://localhost:3000/api/companies -UseBasicParsing
-```
-
-El esquema SQL no debe estar expuesto:
-
-```powershell
-Invoke-WebRequest http://localhost:3000/database/kinetix_core.sql -UseBasicParsing
-```
-
-Resultado esperado: `404`.
-
-## 14. Errores HTTP principales
-
-| Código | Significado |
-|---|---|
-| `200` | Consulta o actualización correcta |
-| `201` | Registro creado |
-| `204` | Operación correcta sin contenido |
-| `400` | Datos inválidos o incompletos |
-| `401` | Falta sesión o credenciales inválidas |
-| `403` | Usuario sin permisos o inactivo |
-| `404` | Registro o ruta no encontrada |
-| `409` | Duplicado, por ejemplo RNC, email o código |
-| `500` | Error interno de aplicación o base de datos |
-| `503` | Base de datos o validación de sesión no disponible |
-
-## 15. Recomendación de despliegue
-
-Antes de producción:
-
-1. Usar HTTPS y `NODE_ENV=production`.
-2. Sacar sesiones de memoria a Redis o base de datos.
-3. Aplicar aislamiento de empresa en backend.
-4. Ejecutar migraciones versionadas.
-5. No exponer `.env`, SQL ni scripts administrativos.
-6. Configurar backups de `KinetixCore`.
-7. Añadir monitoreo de `/api/health`.
-8. Ejecutar pruebas automatizadas en cada cambio.

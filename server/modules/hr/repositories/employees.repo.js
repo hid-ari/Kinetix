@@ -6,6 +6,7 @@ export async function listEmployees(pool, {
   userId,
   isGlobal = false,
   isCompanyAdmin = false,
+  canViewAll = false,
   canViewSalary = false,
   canViewSensitive = false,
   page = 1,
@@ -21,7 +22,7 @@ export async function listEmployees(pool, {
 
   let where = `WHERE e.CompanyId = @companyId`;
 
-  if (!isGlobal && !isCompanyAdmin) {
+  if (!isGlobal && !isCompanyAdmin && !canViewAll) {
     where += ` AND e.Id IN (SELECT EmployeeId FROM dbo.fn_HrVisibleEmployees(@userId, 0, 0))`;
   }
 

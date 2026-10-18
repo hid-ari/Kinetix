@@ -19,8 +19,7 @@ import {
   loadLeaveRequests,
   loadVacationCalendar,
   loadPendingApprovals,
-  loadMyApprovalRequests,
-  loadUnreadNotificationsCount
+  loadMyApprovalRequests
 } from '../views/hr/hr.api.js';
 
 export async function loadHrViewData(view) {
@@ -137,6 +136,16 @@ export function bind(renderFn) {
 
   document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => handleAction(button.dataset.action, button, renderFn)));
 
+  document.querySelectorAll('[data-quick-email]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const emailInput = document.querySelector('#login-email-input');
+      const passInput = document.querySelector('#login-password-input');
+      if (emailInput) emailInput.value = chip.dataset.quickEmail || '';
+      if (passInput) passInput.value = chip.dataset.quickPass || '';
+      toast(`Credenciales de ${chip.querySelector('strong')?.textContent || 'usuario'} cargadas.`);
+    });
+  });
+
   const loginForm = document.querySelector('#login-form');
   if (loginForm) loginForm.addEventListener('submit', async event => {
     event.preventDefault();
@@ -195,6 +204,12 @@ export async function handleAction(action, button, renderFn) {
     renderFn();
     return;
   }
+  if (action === 'back-to-login') {
+    state.resetEmail = null;
+    state.resetToken = null;
+    renderFn();
+    return;
+  }
   if (action === 'toggle-sidebar') { state.sidebarCollapsed = !state.sidebarCollapsed; renderFn(); }
   if (action === 'reponer-product') { state.movementType = 'Entrada'; state.view = 'movements'; toast('Redirigiendo a registro de entrada de inventario.'); renderFn(); }
   if (action === 'new-company') { state.view = 'company-form'; renderFn(); }
@@ -211,11 +226,62 @@ export async function handleAction(action, button, renderFn) {
   if (action === 'new-invoice') { const contactOptions = state.finance.contacts.map(contact => '<option value="' + contact.id + '">' + escapeHtml(contact.type) + ' · ' + escapeHtml(contact.name) + '</option>').join(''); const body = '<div class="form-grid"><div class="field"><label>Número</label><input class="invoice-number" required placeholder="F-000001"></div><div class="field"><label>NCF</label><input class="invoice-ncf" maxlength="19" placeholder="B0100000001"></div><div class="field"><label>Tipo</label><select class="invoice-type"><option>Venta</option><option>Compra</option></select></div><div class="field"><label>Contacto</label><select class="invoice-contact"><option value="">Sin contacto</option>' + contactOptions + '</select></div><div class="field"><label>Subtotal</label><input class="invoice-subtotal" type="number" min="0.01" step="0.01" required></div><div class="field"><label>Impuesto %</label><input class="invoice-tax" type="number" min="0" step="0.01" value="0"></div><div class="field"><label>Vencimiento</label><input class="invoice-due-date" type="date"></div></div>'; showModal('Nueva factura', body, 'Crear factura', async modal => { const response = await fetch('/api/finance/invoices', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ number: modal.querySelector('.invoice-number').value, ncf: modal.querySelector('.invoice-ncf').value || null, type: modal.querySelector('.invoice-type').value, contactId: modal.querySelector('.invoice-contact').value || null, subtotal: Number(modal.querySelector('.invoice-subtotal').value), taxRate: Number(modal.querySelector('.invoice-tax').value), dueDate: modal.querySelector('.invoice-due-date').value || null }) }); const result = await response.json(); if (!response.ok) return toast(result.message || 'No fue posible crear la factura.'); await loadData(); toast('Factura creada correctamente.'); renderFn(); }); }
   if (action === 'new-payment') showModal('Registrar pago', '<div class="form-grid"><div class="field"><label>Monto</label><input class="payment-amount" type="number" min="0.01" step="0.01" required></div><div class="field"><label>Método</label><select class="payment-method"><option>Transferencia</option><option>Tarjeta</option><option>Efectivo</option><option>Cheque</option></select></div><div class="field full"><label>Referencia</label><input class="payment-reference"></div></div>', 'Guardar pago', async modal => { const response = await fetch('/api/finance/payments', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invoiceId: button.dataset.invoiceId, amount: Number(modal.querySelector('.payment-amount').value), method: modal.querySelector('.payment-method').value, reference: modal.querySelector('.payment-reference').value }) }); const result = await response.json(); if (!response.ok) return toast(result.message || 'No fue posible registrar el pago.'); await loadData(); toast('Pago registrado correctamente.'); renderFn(); });
   if (action === 'new-bank') showModal('Movimiento bancario', '<div class="form-grid"><div class="field"><label>Fecha</label><input class="bank-date" type="date"></div><div class="field"><label>Monto</label><input class="bank-amount" type="number" step="0.01" required></div><div class="field full"><label>Descripción</label><input class="bank-description" required></div><div class="field full"><label>Referencia</label><input class="bank-reference"></div></div>', 'Guardar movimiento', async modal => { const response = await fetch('/api/finance/bank-transactions', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transactionDate: modal.querySelector('.bank-date').value || null, amount: Number(modal.querySelector('.bank-amount').value), description: modal.querySelector('.bank-description').value, reference: modal.querySelector('.bank-reference').value }) }); const result = await response.json(); if (!response.ok) return toast(result.message || 'No fue posible guardar el movimiento bancario.'); await loadData(); toast('Movimiento bancario guardado.'); renderFn(); });
-  if (action === 'reconcile-bank') { const response = await fetch(`/api/finance/bank-transactions/${button.dataset.bankId}/reconcile`, { method: 'POST', credentials: 'include' }); const result = await response.json(); if (!response.ok) return toast(result.message || 'No fue posible conciliar el movimiento.'); await loadData(); renderFn(); }
   if (action === 'edit-role') showRoleModal(button.dataset.role || 'Nuevo rol', button.dataset.roleId, renderFn);
+  if (action === 'delete-role') {
+    const roleId = button.dataset.roleId;
+    const roleName = button.dataset.role || 'este rol';
+    showModal(
+      'Eliminar rol',
+      `<p>¿Estás seguro de que deseas eliminar el rol <strong>${escapeHtml(roleName)}</strong>?</p><p style="color:var(--muted);font-size:12px;margin-top:8px;">Esta acción eliminará el rol y sus permisos asignados. Los roles esenciales del sistema y aquellos con usuarios asignados no pueden ser eliminados.</p>`,
+      'Eliminar rol',
+      async () => {
+        const response = await fetch(`/api/roles/${roleId}`, {
+          method: 'DELETE',
+          credentials: 'include'
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          toast(result.message || 'No fue posible eliminar el rol.');
+          return;
+        }
+        await loadData();
+        toast(result.message || 'Rol eliminado exitosamente.');
+        renderFn();
+      }
+    );
+  }
   if (action === 'cancel-form') { state.view = button.closest('#branch-form') ? 'branches' : button.closest('#entity-form') ? (state.view === 'user-form' ? 'users' : 'companies') : 'dashboard'; renderFn(); }
   if (action === 'edit-company') { showModal('Editar empresa', `<div class="form-grid"><div class="field"><label>Nombre</label><input class="company-edit-name" value="${escapeHtml(state.companies.find(c => String(c.id) === String(state.detail))?.name || '')}" required></div></div>`, 'Guardar cambios', async modal => { toast('Información de empresa actualizada.'); renderFn(); }); }
   if (action === 'toggle-company') { const company = state.companies.find(c => String(c.id) === String(state.detail)); if (!company) return; const newStatus = company.status === 'Activa' ? false : true; const response = await fetch(`/api/companies/${company.id}/status`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isActive: newStatus }) }); if (!response.ok) return toast('No fue posible cambiar el estado de la empresa.'); await loadData(); toast(`Empresa ${newStatus ? 'activada' : 'desactivada'}.`); renderFn(); }
+  if (action === 'admin-reset-user-password') {
+    const userId = button.dataset.id;
+    const userName = button.dataset.name || 'el usuario';
+    showModal(
+      `Asignar contraseña para ${escapeHtml(userName)}`,
+      `<div class="field">
+        <label>Nueva contraseña para el colaborador</label>
+        <input class="admin-new-user-password" type="password" minlength="6" placeholder="Mínimo 6 caracteres" required>
+        <span class="helper">Esta contraseña permitirá al colaborador iniciar sesión inmediatamente con sus permisos de rol.</span>
+      </div>`,
+      'Guardar contraseña',
+      async modal => {
+        const newPassword = modal.querySelector('.admin-new-user-password').value;
+        if (!newPassword || newPassword.length < 6) {
+          toast('La contraseña debe tener al menos 6 caracteres.');
+          return;
+        }
+        const response = await fetch(`/api/users/${userId}/password`, {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ newPassword })
+        });
+        const result = await response.json();
+        if (!response.ok) return toast(result?.message || 'Error al actualizar contraseña.');
+        toast(`Contraseña de ${userName} actualizada correctamente.`);
+      }
+    );
+  }
   if (action === 'edit-user') { toast('Editar usuario disponible en formulario.'); }
   if (action === 'toggle-user') { const user = state.users.find(u => String(u.id) === String(state.detail)); if (!user) return; const newStatus = user.status === 'Activa' ? false : true; const response = await fetch(`/api/users/${user.id}/status`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isActive: newStatus }) }); if (!response.ok) return toast('No fue posible cambiar el estado del usuario.'); await loadData(); toast(`Usuario ${newStatus ? 'activado' : 'desactivado'}.`); renderFn(); }
   if (action === 'edit-branch') { toast('Editar sucursal disponible.'); }

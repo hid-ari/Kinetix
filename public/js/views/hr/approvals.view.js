@@ -89,7 +89,7 @@ export function approvalsView() {
           </div>
           <div class="stat-content">
             <span class="stat-label">Completadas con Éxito</span>
-            <strong class="stat-value">${myRequests.filter(r => r.Status === 'Aprobado').length}</strong>
+            <strong class="stat-value">${myRequests.filter(r => r.Status === 'Aprobado' || r.Status === 'Aprobada').length}</strong>
             <span class="stat-sub">Aprobaciones finales</span>
           </div>
         </div>

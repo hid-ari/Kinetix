@@ -18,7 +18,8 @@ import {
   assertEmployeeAccess,
   hasPermission,
   isGlobalAdmin,
-  isCompanyAdmin
+  isCompanyAdmin,
+  canViewAllCompanyEmployees
 } from '../access.js';
 import { validateEmployeeInput } from '../validators.js';
 import { uploadPhoto, saveFile, getFilePath } from '../storage.js';
@@ -37,12 +38,14 @@ export function createEmployeesRouter(ctx) {
 
       const canViewSalary = isGlobalAdmin(req) || isCompanyAdmin(req) || await hasPermission(pool, req.user.userId, 'RRHH Empleados', 'Ver información salarial', req);
       const canViewSensitive = isGlobalAdmin(req) || isCompanyAdmin(req) || await hasPermission(pool, req.user.userId, 'RRHH Empleados', 'Ver datos sensibles', req);
+      const canViewAll = await canViewAllCompanyEmployees(pool, req);
 
       const result = await listEmployees(pool, {
         companyId,
         userId: req.user.userId,
         isGlobal: isGlobalAdmin(req),
         isCompanyAdmin: isCompanyAdmin(req),
+        canViewAll,
         canViewSalary,
         canViewSensitive,
         page: req.query.page ? Number(req.query.page) : 1,
@@ -71,12 +74,14 @@ export function createEmployeesRouter(ctx) {
 
       const canViewSalary = isGlobalAdmin(req) || isCompanyAdmin(req) || await hasPermission(pool, req.user.userId, 'RRHH Empleados', 'Ver información salarial', req);
       const canViewSensitive = isGlobalAdmin(req) || isCompanyAdmin(req) || await hasPermission(pool, req.user.userId, 'RRHH Empleados', 'Ver datos sensibles', req);
+      const canViewAll = await canViewAllCompanyEmployees(pool, req);
 
       const result = await listEmployees(pool, {
         companyId,
         userId: req.user.userId,
         isGlobal: isGlobalAdmin(req),
         isCompanyAdmin: isCompanyAdmin(req),
+        canViewAll,
         canViewSalary,
         canViewSensitive,
         page: 1,

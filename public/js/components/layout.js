@@ -1,4 +1,4 @@
-import { state, nav, canManageRoles } from '../core/state.js';
+import { state, nav, canAccessView } from '../core/state.js';
 import { escapeHtml, initials } from './utils.js';
 
 export function layout(content) {
@@ -7,12 +7,15 @@ export function layout(content) {
   let navHtml = '';
   let currentGroup = undefined;
 
-  nav.filter(item => item.id !== 'roles' || canManageRoles()).forEach(item => {
+  // Filtrar ítems de navegación según los privilegios del rol
+  const allowedNav = nav.filter(item => canAccessView(item.id));
+
+  allowedNav.forEach((item, index) => {
     const itemLabel = item.id === 'companies' && state.currentUser?.role === 'Super Admin' ? 'Empresas' : item.id === 'companies' ? 'Mi empresa' : item.label;
     if (item.group !== currentGroup) {
       currentGroup = item.group;
       if (item.group) navHtml += `<div class="nav-group-label">${item.group}</div>`;
-      else if (navHtml) navHtml += `<div class="nav-divider"></div>`;
+      else if (navHtml && index > 0) navHtml += `<div class="nav-divider"></div>`;
     }
     const isActive = state.view === item.id || (item.id === 'dashboard' && state.view === 'dashboard');
     navHtml += `<button class="nav-item ${isActive ? 'active' : ''}" data-nav="${item.id}" title="${itemLabel}">
@@ -52,7 +55,11 @@ export function layout(content) {
       <header class="topbar">
         <div class="topbar-left">
           <button class="mobile-menu-btn" data-action="toggle-sidebar" title="Abrir menú">☰</button>
-          <div class="search"><span>⌕</span><input id="global-search" placeholder="Buscar en Kinetix..." value="${escapeHtml(state.query)}"></div>
+          <div class="search">
+            <span>⌕</span>
+            <input id="global-search" placeholder="Buscar en Kinetix..." value="${escapeHtml(state.query)}">
+            <kbd class="search-kbd">⌘K</kbd>
+          </div>
         </div>
         <div class="top-actions">
           <div class="topbar-notifications-wrapper">
@@ -76,7 +83,10 @@ export function layout(content) {
             </div>
           </div>
           <button class="topbar-profile-btn" data-nav="profile" title="Mi perfil">
-            <div class="profile-avatar">${escapeHtml(initials(userName))}</div>
+            <div class="profile-avatar">
+              ${escapeHtml(initials(userName))}
+              <span class="avatar-status-dot"></span>
+            </div>
             <div class="profile-info">
               <strong>${escapeHtml(userName)}</strong>
               <small>${escapeHtml(user.role || 'Usuario')}</small>

@@ -74,7 +74,7 @@ export const state = {
 
 export const nav = [
   { id: 'dashboard', icon: `<svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 10a8 8 0 1116 0A8 8 0 012 10zm8-5a1 1 0 011 1v3.586l2.707 2.707a1 1 0 01-1.414 1.414l-3-3A1 1 0 019 10V6a1 1 0 011-1z"/></svg>`, label: 'Inicio', group: 'Inicio' },
-  { id: 'hr-dashboard', icon: `<svg viewBox="0 0 20 20" fill="currentColor"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z"/></svg>`, label: 'Recursos Humanos', group: 'Talento Humano' },
+  { id: 'hr-dashboard', icon: `<svg viewBox="0 0 20 20" fill="currentColor"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z"/></svg>`, label: 'Recursos Humanos', group: 'Recursos Humanos' },
   { id: 'hr-employees', icon: `<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>`, label: 'Empleados', group: null },
   { id: 'hr-departments', icon: `<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4zm3 1h6v4H7V5zm6 6H7v2h6v-2z" clip-rule="evenodd"/></svg>`, label: 'Departamentos', group: null },
   { id: 'hr-positions', icon: `<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M6 6V5a3 3 0 013-3h2a3 3 0 013 3v1h2a2 2 0 012 2v3.57A22.952 22.952 0 0110 13a22.95 22.95 0 01-8-1.43V8a2 2 0 012-2h2zm2-1a1 1 0 011-1h2a1 1 0 011 1v1H8V5zm1 5a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1z" clip-rule="evenodd"/><path d="M2 13.692V16a2 2 0 002 2h12a2 2 0 002-2v-2.308A24.974 24.974 0 0110 15c-2.796 0-5.487-.46-8-1.308z"/></svg>`, label: 'Cargos', group: null },
@@ -104,6 +104,85 @@ const navOrder = [
 ];
 nav.sort((left, right) => navOrder.indexOf(left.id) - navOrder.indexOf(right.id));
 
+export function isSuperAdmin() {
+  return state.currentUser?.isSuperAdmin === true || state.currentUser?.role === 'Super Admin';
+}
+
+export function isCompanyAdmin() {
+  return isSuperAdmin() || state.currentUser?.isCompanyAdmin === true || state.currentUser?.role === 'Company Admin';
+}
+
 export function canManageRoles() {
-  return ['Super Admin', 'Company Admin'].includes(state.currentUser?.role);
+  return isSuperAdmin() || isCompanyAdmin() || hasPermission('Roles', 'Administrar roles');
+}
+
+export function hasPermission(moduleName, permissionName) {
+  if (isSuperAdmin()) return true;
+  const user = state.currentUser;
+  if (!user) return false;
+  if (user.role === 'Company Admin' || user.isCompanyAdmin) return true;
+
+  const perms = Array.isArray(user.permissions) ? user.permissions : [];
+  if (!permissionName) {
+    return perms.some(p => p.startsWith(`${moduleName}|`));
+  }
+  return perms.includes(`${moduleName}|${permissionName}`);
+}
+
+export function canAccessView(viewId) {
+  if (!state.loggedIn || !state.currentUser) return false;
+  if (isSuperAdmin() || isCompanyAdmin()) return true;
+
+  switch (viewId) {
+    case 'dashboard':
+      return true;
+    case 'hr-dashboard':
+      return hasPermission('RRHH Empleados', 'Ver empleados') || ['Director de RRHH', 'Analista de RRHH'].includes(state.currentUser?.role);
+    case 'hr-employees':
+    case 'hr-employee-detail':
+    case 'hr-employee-form':
+      return hasPermission('RRHH Empleados', 'Ver empleados');
+    case 'hr-departments':
+    case 'hr-positions':
+    case 'hr-orgchart':
+      return hasPermission('RRHH Estructura', 'Ver estructura');
+    case 'hr-attendance':
+      return hasPermission('RRHH Asistencia', 'Ver asistencia') || hasPermission('RRHH Asistencia', 'Registrar asistencia');
+    case 'hr-vacations':
+      return hasPermission('RRHH Vacaciones', 'Ver vacaciones') || hasPermission('RRHH Vacaciones', 'Solicitar vacaciones') || hasPermission('RRHH Permisos', 'Ver permisos');
+    case 'hr-approvals':
+      return hasPermission('RRHH Aprobaciones', 'Ver aprobaciones') || hasPermission('RRHH Aprobaciones', 'Aprobar solicitudes');
+    case 'companies':
+    case 'company-detail':
+    case 'company-form':
+      return hasPermission('Empresas', 'Ver empresas');
+    case 'users':
+    case 'user-detail':
+    case 'user-form':
+      return hasPermission('Usuarios', 'Ver usuarios');
+    case 'branches':
+    case 'branch-detail':
+    case 'branch-form':
+      return hasPermission('Sucursales', 'Ver sucursales');
+    case 'roles':
+      return canManageRoles() || hasPermission('Roles', 'Ver roles');
+    case 'audit':
+      return hasPermission('Auditoría', 'Ver auditoría');
+    case 'inventory':
+      return hasPermission('Inventario', 'Ver inventario');
+    case 'products':
+      return hasPermission('Productos', 'Ver productos');
+    case 'stock':
+      return hasPermission('Existencias', 'Ver existencias');
+    case 'movements':
+      return hasPermission('Movimientos', 'Ver movimientos');
+    case 'alerts':
+      return hasPermission('Alertas', 'Ver alertas');
+    case 'finance':
+      return hasPermission('Finanzas', 'Ver finanzas');
+    case 'profile':
+      return true;
+    default:
+      return true;
+  }
 }

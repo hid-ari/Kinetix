@@ -318,12 +318,6 @@ async function requireAuth(request, response, next) {
   }
 }
 
-function requireAdmin(request, response, next) {
-  if (!['Super Admin', 'Company Admin'].includes(request.user.role)) {
-    return response.status(403).json({ message: 'No tienes permisos para realizar esta operación.' });
-  }
-  next();
-}
 
 function isGlobalAdmin(request) {
   return request.user?.role === 'Super Admin';
@@ -387,14 +381,14 @@ async function writeAudit(request, action, moduleName, entityName, entityId, com
 }
 
 app.use('/api', (request, response, next) => {
-  if (request.path === '/health' || request.path === '/auth/login') return next();
+  if (request.path === '/health' || request.path.startsWith('/auth/')) return next();
   return requireAuth(request, response, next);
 });
 
-// M-05: Rate limiting — 10 intentos por IP en 15 minutos
+// M-05: Rate limiting — Permisivo en desarrollo para pruebas fluidas de usuarios
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: process.env.NODE_ENV === 'production' ? 20 : 500,
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: 'Demasiados intentos de acceso. Inténtalo de nuevo en 15 minutos.' }
@@ -1096,7 +1090,31 @@ app.get('/api/profile', async (request, response) => {
         WHERE u.UserId = @userId;
       `);
     if (!result.recordset[0]) return response.status(404).json({ message: 'Perfil no encontrado.' });
-    response.json(result.recordset[0]);
+    const profile = result.recordset[0];
+    const isSuperAdmin = profile.role === 'Super Admin';
+    const isCompanyAdmin = profile.role === 'Company Admin';
+    let permissions = [];
+    if (isSuperAdmin) {
+      const allPerms = await pool.request().query('SELECT ModuleName, PermissionName FROM dbo.Permissions;');
+      permissions = allPerms.recordset.map(p => `${p.ModuleName}|${p.PermissionName}`);
+    } else {
+      const permResult = await pool.request()
+        .input('userId', sql.NVarChar(450), request.user.userId)
+        .query(`
+          SELECT DISTINCT p.ModuleName, p.PermissionName
+          FROM dbo.UserRoles ur
+          INNER JOIN dbo.RolePermissions rp ON rp.RoleId = ur.RoleId
+          INNER JOIN dbo.Permissions p ON p.Id = rp.PermissionId
+          WHERE ur.UserId = @userId;
+        `);
+      permissions = permResult.recordset.map(p => `${p.ModuleName}|${p.PermissionName}`);
+    }
+    response.json({
+      ...profile,
+      isSuperAdmin,
+      isCompanyAdmin,
+      permissions
+    });
   } catch (error) {
     console.error('Profile query failed:', error.message);
     response.status(500).json({ message: 'No fue posible cargar el perfil.' });
@@ -1165,7 +1183,9 @@ app.get('/api/roles', requireRoleAdministration, async (request, response) => {
       .input('companyId', sql.Int, request.user.companyId || null)
       .query(`
       SELECT r.Id AS id, r.Name AS name, r.Description AS description,
-             r.RoleType AS type, COUNT(ur.UserId) AS userCount
+             r.RoleType AS type,
+             CASE WHEN r.RoleType = N'Sistema' THEN 1 ELSE 0 END AS isSystem,
+             COUNT(ur.UserId) AS userCount
       FROM dbo.Roles AS r
       LEFT JOIN dbo.UserRoles AS ur ON ur.RoleId = r.Id
       WHERE r.IsActive = 1
@@ -1387,6 +1407,36 @@ app.put('/api/users/:id', requirePermission('Usuarios', 'Editar usuarios'), asyn
   }
 });
 
+app.put('/api/users/:id/password', requirePermission('Usuarios', 'Editar usuarios'), async (request, response) => {
+  const { newPassword } = request.body;
+  const targetUserId = request.params.id;
+  if (!newPassword || newPassword.length < 6) {
+    return response.status(400).json({ message: 'La nueva contraseña debe tener al menos 6 caracteres.' });
+  }
+  try {
+    const pool = await getPool();
+    if (!isGlobalAdmin(request)) {
+      const targetUser = await pool.request().input('uid', sql.NVarChar(450), targetUserId)
+        .query('SELECT CompanyId FROM dbo.UserOrganizations WHERE UserId = @uid');
+      if (targetUser.recordset[0]?.CompanyId !== request.user.companyId) {
+        return response.status(403).json({ message: 'No puedes modificar usuarios de otra empresa.' });
+      }
+    }
+    const salt = crypto.randomBytes(16);
+    const hash = crypto.pbkdf2Sync(newPassword, salt, 310000, 32, 'sha512');
+    const passwordHash = ['pbkdf2', 'sha512', '310000', salt.toString('base64'), hash.toString('base64')].join('$');
+    await pool.request()
+      .input('userId', sql.NVarChar(450), targetUserId)
+      .input('passwordHash', sql.NVarChar(500), passwordHash)
+      .query('UPDATE dbo.UserOrganizations SET PasswordHash = @passwordHash, UpdatedAt = SYSUTCDATETIME() WHERE UserId = @userId');
+    await writeAudit(request, 'PASSWORD_RESET', 'Usuarios', 'User', targetUserId, request.user.companyId);
+    response.json({ message: 'Contraseña actualizada correctamente.' });
+  } catch (error) {
+    console.error('Admin password update failed:', error.message);
+    response.status(500).json({ message: 'No fue posible actualizar la contraseña del usuario.' });
+  }
+});
+
 app.post('/api/branches', requirePermission('Sucursales', 'Crear sucursales'), async (request, response) => {
   const { companyId, name, code, address, phone, email, managerUserId } = request.body;
   if (!Number.isInteger(Number(companyId)) || !name?.trim() || !code?.trim()) {
@@ -1470,23 +1520,222 @@ app.patch('/api/branches/:id/status', requirePermission('Sucursales', 'Editar su
 });
 
 app.post('/api/roles', requireRoleAdministration, async (request, response) => {
-  const { name, description, roleType = 'Personalizado' } = request.body;
+  const { name, description, roleType = 'Personalizado', permissionIds } = request.body || {};
   if (!name?.trim()) return response.status(400).json({ message: 'El nombre del rol es obligatorio.' });
-  if (name.trim() === 'Super Admin') return response.status(403).json({ message: 'El rol Super Admin solo puede ser administrado por un Super Admin.' });
+  if (name.trim().toLowerCase() === 'super admin') {
+    return response.status(403).json({ message: 'El rol Super Admin es reservado del sistema.' });
+  }
+  
+  const pool = await getPool();
+  const transaction = new sql.Transaction(pool);
+  let transactionStarted = false;
   try {
-    const pool = await getPool();
-    const result = await pool.request()
+    await transaction.begin();
+    transactionStarted = true;
+
+    const exists = await new sql.Request(transaction)
+      .input('name', sql.NVarChar(100), name.trim())
+      .query('SELECT Id FROM dbo.Roles WHERE LOWER(Name) = LOWER(@name) AND IsActive = 1;');
+    if (exists.recordset[0]) {
+      await transaction.rollback();
+      transactionStarted = false;
+      return response.status(409).json({ message: 'Ya existe un rol con ese nombre.' });
+    }
+
+    const effectiveRoleType = (roleType === 'Sistema' && isGlobalAdmin(request)) ? 'Sistema' : 'Personalizado';
+
+    const insertResult = await new sql.Request(transaction)
       .input('name', sql.NVarChar(100), name.trim())
       .input('description', sql.NVarChar(300), description?.trim() || null)
-      .input('roleType', sql.NVarChar(30), roleType.trim())
-      .query(`INSERT INTO dbo.Roles (Name, Description, RoleType)
-              OUTPUT INSERTED.Id AS id, INSERTED.Name AS name, INSERTED.Description AS description, INSERTED.RoleType AS type
-              VALUES (@name, @description, @roleType);`);
-    await writeAudit(request, 'CREATE', 'Roles', 'Role', result.recordset[0].id);
-    response.status(201).json(result.recordset[0]);
+      .input('roleType', sql.NVarChar(30), effectiveRoleType)
+      .query(`INSERT INTO dbo.Roles (Name, Description, RoleType, IsActive)
+              OUTPUT INSERTED.Id AS id, INSERTED.Name AS name, INSERTED.Description AS description,
+                     INSERTED.RoleType AS type,
+                     CASE WHEN INSERTED.RoleType = N'Sistema' THEN 1 ELSE 0 END AS isSystem
+              VALUES (@name, @description, @roleType, 1);`);
+    
+    const roleId = insertResult.recordset[0].id;
+
+    if (Array.isArray(permissionIds) && permissionIds.length > 0) {
+      const uniquePermIds = [...new Set(permissionIds.map(Number).filter(Number.isInteger))];
+      for (const pId of uniquePermIds) {
+        await new sql.Request(transaction)
+          .input('roleId', sql.Int, roleId)
+          .input('permissionId', sql.Int, pId)
+          .query('INSERT INTO dbo.RolePermissions (RoleId, PermissionId) VALUES (@roleId, @permissionId);');
+      }
+    }
+
+    await transaction.commit();
+    transactionStarted = false;
+    await writeAudit(request, 'CREATE', 'Roles', 'Role', roleId);
+    response.status(201).json({ ...insertResult.recordset[0], userCount: 0 });
   } catch (error) {
+    if (transactionStarted) {
+      try { await transaction.rollback(); } catch (_) {}
+    }
     console.error('Role creation failed:', error.message);
     response.status(error.number === 2627 ? 409 : 500).json({ message: error.number === 2627 ? 'Ese rol ya existe.' : 'No fue posible guardar el rol.' });
+  }
+});
+
+app.put('/api/roles/:id', requireRoleAdministration, async (request, response) => {
+  const roleId = Number(request.params.id);
+  if (!Number.isInteger(roleId) || roleId <= 0) return response.status(400).json({ message: 'ID de rol inválido.' });
+
+  const { name, description, permissionIds } = request.body || {};
+  const pool = await getPool();
+  const transaction = new sql.Transaction(pool);
+  let transactionStarted = false;
+
+  try {
+    await transaction.begin();
+    transactionStarted = true;
+
+    const roleCheck = await new sql.Request(transaction)
+      .input('roleId', sql.Int, roleId)
+      .query('SELECT Id, Name, Description, RoleType FROM dbo.Roles WHERE Id = @roleId AND IsActive = 1;');
+    
+    const currentRole = roleCheck.recordset[0];
+    if (!currentRole) {
+      await transaction.rollback();
+      transactionStarted = false;
+      return response.status(404).json({ message: 'El rol no existe.' });
+    }
+
+    if (currentRole.Name === 'Super Admin' && !isGlobalAdmin(request)) {
+      await transaction.rollback();
+      transactionStarted = false;
+      return response.status(403).json({ message: 'No puedes administrar el rol Super Admin.' });
+    }
+
+    const isSystemRole = currentRole.RoleType === 'Sistema';
+    let targetName = currentRole.Name;
+
+    if (name && name.trim()) {
+      if (isSystemRole && name.trim() !== currentRole.Name) {
+        await transaction.rollback();
+        transactionStarted = false;
+        return response.status(400).json({ message: 'No se puede cambiar el nombre de un rol esencial del sistema.' });
+      }
+      if (!isSystemRole) {
+        targetName = name.trim();
+        const conflict = await new sql.Request(transaction)
+          .input('name', sql.NVarChar(100), targetName)
+          .input('roleId', sql.Int, roleId)
+          .query('SELECT Id FROM dbo.Roles WHERE LOWER(Name) = LOWER(@name) AND Id <> @roleId AND IsActive = 1;');
+        if (conflict.recordset[0]) {
+          await transaction.rollback();
+          transactionStarted = false;
+          return response.status(409).json({ message: 'Ya existe otro rol con ese nombre.' });
+        }
+      }
+    }
+
+    const targetDesc = description !== undefined ? (description?.trim() || null) : currentRole.Description;
+
+    await new sql.Request(transaction)
+      .input('roleId', sql.Int, roleId)
+      .input('name', sql.NVarChar(100), targetName)
+      .input('description', sql.NVarChar(300), targetDesc)
+      .query('UPDATE dbo.Roles SET Name = @name, Description = @description WHERE Id = @roleId;');
+
+    if (Array.isArray(permissionIds)) {
+      const uniquePermIds = [...new Set(permissionIds.map(Number).filter(Number.isInteger))];
+      await new sql.Request(transaction)
+        .input('roleId', sql.Int, roleId)
+        .query('DELETE FROM dbo.RolePermissions WHERE RoleId = @roleId;');
+
+      for (const pId of uniquePermIds) {
+        await new sql.Request(transaction)
+          .input('roleId', sql.Int, roleId)
+          .input('permissionId', sql.Int, pId)
+          .query('INSERT INTO dbo.RolePermissions (RoleId, PermissionId) VALUES (@roleId, @permissionId);');
+      }
+    }
+
+    await transaction.commit();
+    transactionStarted = false;
+    await writeAudit(request, 'UPDATE', 'Roles', 'Role', roleId);
+
+    response.json({
+      id: roleId,
+      name: targetName,
+      description: targetDesc,
+      type: currentRole.RoleType,
+      isSystem: isSystemRole ? 1 : 0
+    });
+  } catch (error) {
+    if (transactionStarted) {
+      try { await transaction.rollback(); } catch (_) {}
+    }
+    console.error('Role update failed:', error.message);
+    response.status(500).json({ message: 'No fue posible actualizar el rol.' });
+  }
+});
+
+app.delete('/api/roles/:id', requireRoleAdministration, async (request, response) => {
+  const roleId = Number(request.params.id);
+  if (!Number.isInteger(roleId) || roleId <= 0) return response.status(400).json({ message: 'ID de rol inválido.' });
+
+  const pool = await getPool();
+  try {
+    const roleCheck = await pool.request()
+      .input('roleId', sql.Int, roleId)
+      .query('SELECT Id, Name, Description, RoleType FROM dbo.Roles WHERE Id = @roleId;');
+    
+    const role = roleCheck.recordset[0];
+    if (!role) return response.status(404).json({ message: 'El rol no existe.' });
+
+    // Protección de roles esenciales del sistema
+    if (role.RoleType === 'Sistema' || role.Name === 'Super Admin') {
+      return response.status(403).json({
+        message: `El rol "${role.Name}" es esencial para el funcionamiento del sistema y no puede ser eliminado.`
+      });
+    }
+
+    // Verificar usuarios asignados
+    const userCountCheck = await pool.request()
+      .input('roleId', sql.Int, roleId)
+      .query('SELECT COUNT(*) AS userCount FROM dbo.UserRoles WHERE RoleId = @roleId;');
+    
+    const count = userCountCheck.recordset[0]?.userCount || 0;
+    if (count > 0) {
+      return response.status(400).json({
+        message: `No se puede eliminar el rol "${role.Name}" porque tiene ${count} usuario(s) asignado(s). Desasigne los usuarios antes de eliminarlo.`
+      });
+    }
+
+    const transaction = new sql.Transaction(pool);
+    let transactionStarted = false;
+    try {
+      await transaction.begin();
+      transactionStarted = true;
+
+      // Eliminar permisos asociados
+      await new sql.Request(transaction)
+        .input('roleId', sql.Int, roleId)
+        .query('DELETE FROM dbo.RolePermissions WHERE RoleId = @roleId;');
+
+      // Eliminar rol
+      await new sql.Request(transaction)
+        .input('roleId', sql.Int, roleId)
+        .query('DELETE FROM dbo.Roles WHERE Id = @roleId;');
+
+      await transaction.commit();
+      transactionStarted = false;
+      await writeAudit(request, 'DELETE', 'Roles', 'Role', roleId);
+
+      response.json({ message: `Rol "${role.Name}" eliminado exitosamente.` });
+    } catch (innerError) {
+      if (transactionStarted) {
+        try { await transaction.rollback(); } catch (_) {}
+      }
+      throw innerError;
+    }
+  } catch (error) {
+    console.error('Role deletion failed:', error.message);
+    response.status(500).json({ message: 'No fue posible eliminar el rol.' });
   }
 });
 

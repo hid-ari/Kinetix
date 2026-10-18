@@ -18,14 +18,26 @@ async function runPhase2Tests() {
     options: { trustedConnection: true, trustServerCertificate: true }
   });
 
+  let employeeId;
+  let tempEmpCreated = false;
+
   try {
     const compRes = await pool.request().query('SELECT TOP 1 Id FROM dbo.Companies WHERE IsActive = 1;');
     const companyId = compRes.recordset[0]?.Id;
     assert(companyId, 'Debe existir una empresa activa');
 
-    const empRes = await pool.request().query('SELECT TOP 1 Id, UserId FROM dbo.HrEmployees WHERE Status = N\'Activo\';');
-    const employeeId = empRes.recordset[0]?.Id;
-    assert(employeeId, 'Debe existir al menos un empleado activo (Carlos Mendoza)');
+    const empRes = await pool.request().query("SELECT TOP 1 Id, UserId FROM dbo.HrEmployees WHERE Status = N'Activo';");
+    if (empRes.recordset[0]) {
+      employeeId = empRes.recordset[0].Id;
+    } else {
+      const insRes = await pool.request().query(`
+        INSERT INTO dbo.HrEmployees (CompanyId, EmployeeCode, FirstName, LastName, DocumentType, DocumentNumber, Email, HireDate, Status, BaseSalary, PayFrequency)
+        OUTPUT INSERTED.Id
+        VALUES (1, 'EMP-TEMP-P2', 'Test', 'Phase2', 'Cedula', '402-0000000-0', 'test.p2@empresa.com', '2023-01-01', 'Activo', 50000, 'Mensual');
+      `);
+      employeeId = insRes.recordset[0].Id;
+      tempEmpCreated = true;
+    }
 
     // 1. Shifts and attendance
     console.log('1. Probando turnos de trabajo y registro de asistencia...');
@@ -69,13 +81,19 @@ async function runPhase2Tests() {
 
     // 3. Vacation Request & Multi-step approval flow
     console.log('\n3. Probando solicitud de vacaciones y flujo de aprobación multietapa...');
-    const daysToRequest = Math.min(5, Math.max(1, balance.daysAvailable));
+    // Clean up test dates to prevent duplicate/overlap conflicts on re-run
+    await pool.request().input('empId', employeeId).query("DELETE FROM dbo.HrVacationRequests WHERE EmployeeId = @empId;");
+    await pool.request().input('empId', employeeId).query("DELETE FROM dbo.HrLeaveRequests WHERE EmployeeId = @empId;");
+    await pool.request().input('empId', employeeId).query("DELETE FROM dbo.HrApprovalHistory WHERE RequestId IN (SELECT Id FROM dbo.HrApprovalRequests WHERE RequesterEmployeeId = @empId AND RequestType IN (N'Vacaciones', N'Permiso'));");
+    await pool.request().input('empId', employeeId).query("DELETE FROM dbo.HrApprovalRequests WHERE RequesterEmployeeId = @empId AND RequestType IN (N'Vacaciones', N'Permiso');");
+
+    const daysToRequest = 5;
     const { vacationRequest, approval } = await createVacationRequest(pool, {
       companyId,
       employeeId,
-      startDate: '2026-11-10',
-      endDate: '2026-11-14',
-      returnDate: '2026-11-17',
+      startDate: '2026-11-09',
+      endDate: '2026-11-13',
+      returnDate: '2026-11-16',
       daysRequested: daysToRequest,
       reason: 'Vacaciones de fin de año'
     });
@@ -139,6 +157,35 @@ async function runPhase2Tests() {
     assert(leaveTypes.length > 0, 'Debe haber tipos de licencias sembrados');
     const medLeave = leaveTypes.find(t => t.Code === 'LIC-MED') || leaveTypes[0];
 
+    // 4a. Verify requirement of attachment
+    let attachmentBlocked = false;
+    try {
+      await createLeaveRequest(pool, {
+        companyId,
+        employeeId,
+        leaveTypeId: medLeave.Id,
+        startDate: '2026-12-01',
+        endDate: '2026-12-02',
+        duration: 2,
+        reason: 'Sin documento médico'
+      });
+    } catch (err) {
+      attachmentBlocked = true;
+    }
+    assert.strictEqual(attachmentBlocked, true, 'Licencia médica debe exigir adjunto');
+    console.log('   ✓ Rechazo correcto cuando falta adjunto obligatorio en licencia médica.');
+
+    // 4b. Insert a test document and proceed
+    const fileRes = await pool.request()
+      .input('compId', companyId)
+      .input('uid', adminUserId)
+      .query(`
+        INSERT INTO dbo.HrFiles (CompanyId, UploadedBy, OriginalName, StorageKey, MimeType, SizeBytes, Sha256)
+        OUTPUT INSERTED.Id
+        VALUES (@compId, @uid, N'constancia_medica.pdf', N'test/constancia.pdf', N'application/pdf', 2048, N'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
+      `);
+    const testFileId = fileRes.recordset[0].Id;
+
     const { leaveRequest, approval: leaveApp } = await createLeaveRequest(pool, {
       companyId,
       employeeId,
@@ -147,11 +194,12 @@ async function runPhase2Tests() {
       endDate: '2026-12-02',
       duration: 2,
       unit: 'Dias',
-      reason: 'Cita médica especialista con reposo prescrito'
+      reason: 'Cita médica especialista con reposo prescrito',
+      attachedFileId: testFileId
     });
 
     assert.strictEqual(leaveRequest.Status, 'Pendiente');
-    console.log(`   ✓ Solicitud de licencia médica (#${leaveRequest.Id}) creada.`);
+    console.log(`   ✓ Solicitud de licencia médica (#${leaveRequest.Id}) creada con adjunto válido.`);
 
     // Approve leave request
     const leaveOutcome = await processApprovalAction(pool, {
@@ -177,10 +225,35 @@ async function runPhase2Tests() {
     await markNotificationRead(pool, firstNotif.Id, adminUserId);
     console.log(`   ✓ Notificación #${firstNotif.Id} (${firstNotif.Title}) marcada como leída.`);
 
+    // Clean up test file
+    await pool.request().input('fid', testFileId).query('UPDATE dbo.HrLeaveRequests SET AttachedFileId = NULL WHERE AttachedFileId = @fid; DELETE FROM dbo.HrFiles WHERE Id = @fid;');
+
     console.log('\n======================================================');
     console.log('TODAS LAS PRUEBAS DE LA FASE 2 COMPLETADAS CON ÉXITO.');
     console.log('======================================================\n');
   } finally {
+    if (tempEmpCreated && employeeId) {
+      try {
+        await pool.request().input('id', employeeId).query(`
+          DELETE FROM dbo.HrEmployeeShifts WHERE EmployeeId = @id;
+          DELETE FROM dbo.HrAttendance WHERE EmployeeId = @id;
+          DELETE FROM dbo.HrAttendanceCorrections WHERE EmployeeId = @id;
+          DELETE FROM dbo.HrVacationBalances WHERE EmployeeId = @id;
+          DELETE FROM dbo.HrVacationRequests WHERE EmployeeId = @id;
+          DELETE FROM dbo.HrEmergencyContacts WHERE EmployeeId = @id;
+          DELETE FROM dbo.HrEmployeeDocuments WHERE EmployeeId = @id;
+          DELETE FROM dbo.HrLeaveRequests WHERE EmployeeId = @id;
+          DELETE FROM dbo.HrApprovalHistory WHERE RequestId IN (SELECT Id FROM dbo.HrApprovalRequests WHERE RequesterEmployeeId = @id);
+          DELETE FROM dbo.HrApprovalRequests WHERE RequesterEmployeeId = @id;
+          DISABLE TRIGGER TR_HrEmployeeMovements_Immutable ON dbo.HrEmployeeMovements;
+          DELETE FROM dbo.HrEmployeeMovements WHERE EmployeeId = @id;
+          ENABLE TRIGGER TR_HrEmployeeMovements_Immutable ON dbo.HrEmployeeMovements;
+          DELETE FROM dbo.HrEmployees WHERE Id = @id;
+        `);
+      } catch (cleanErr) {
+        console.error('Error cleaning up temp employee:', cleanErr.message);
+      }
+    }
     await pool.close();
   }
 }

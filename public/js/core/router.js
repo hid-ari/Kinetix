@@ -1,16 +1,37 @@
-import { state, canManageRoles } from './state.js';
+import { state, canManageRoles, canAccessView } from './state.js';
 import { layout } from '../components/layout.js';
 import { bind } from './events.js';
+// Auth Views
 import { login, resetPasswordView } from '../views/auth/login.view.js';
+
+// Dashboard Views
 import { dashboard } from '../views/dashboard/dashboard.view.js';
-import {
-  myCompany, companies, companyDetail, users, userDetail,
-  branches, branchDetail, roles, audit, profile, form, branchForm
-} from '../views/admin/admin.views.js';
-import {
-  inventory, products, stock, movements, alerts
-} from '../views/inventory/inventory.views.js';
-import { finance, financeWorkspace } from '../views/finance/finance.view.js';
+
+// Admin Views
+import { myCompany, companies } from '../views/admin/companies.view.js';
+import { companyDetail } from '../views/admin/company-detail.view.js';
+import { users } from '../views/admin/users.view.js';
+import { userDetail } from '../views/admin/user-detail.view.js';
+import { branches } from '../views/admin/branches.view.js';
+import { branchDetail } from '../views/admin/branch-detail.view.js';
+import { roles } from '../views/admin/roles.view.js';
+import { audit } from '../views/admin/audit.view.js';
+import { profile } from '../views/admin/profile.view.js';
+import { form } from '../views/admin/forms.view.js';
+import { branchForm } from '../views/admin/branch-form.view.js';
+
+// Inventory Views
+import { inventory } from '../views/inventory/inventory.dashboard.view.js';
+import { products } from '../views/inventory/products.view.js';
+import { stock } from '../views/inventory/stock.view.js';
+import { movements } from '../views/inventory/movements.view.js';
+import { alerts } from '../views/inventory/alerts.view.js';
+
+// Finance Views
+import { finance } from '../views/finance/finance.dashboard.view.js';
+import { financeWorkspace } from '../views/finance/finance.workspace.view.js';
+
+// HR Views
 import { hrDashboard } from '../views/hr/hr.dashboard.view.js';
 import { employeesView } from '../views/hr/employees.view.js';
 import { employeeForm } from '../views/hr/employee-form.view.js';
@@ -41,7 +62,10 @@ export function render() {
     return;
   }
 
-  if (state.view === 'roles' && !canManageRoles()) state.view = 'dashboard';
+  // Protección integral de rutas basada en privilegios y alcance del rol
+  if (!canAccessView(state.view)) {
+    state.view = 'dashboard';
+  }
 
   let content = state.view === 'dashboard' ? dashboard()
     : state.view === 'hr-dashboard' ? hrDashboard()

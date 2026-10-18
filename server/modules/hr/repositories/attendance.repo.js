@@ -2,6 +2,72 @@ import sql from 'mssql/msnodesqlv8.js';
 import { createApprovalRequest } from './approvals.repo.js';
 
 /**
+ * Local calendar date (YYYY-MM-DD). Using toISOString() would yield the UTC date,
+ * which flips to "tomorrow" after 8 PM in UTC-4 (Dominican Republic).
+ */
+export function localDateStr(d = new Date()) {
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** Minutes since midnight for a SQL TIME value (string "HH:mm:ss" or Date from the driver). */
+function timeToMinutes(t) {
+  if (t == null) return null;
+  if (typeof t === 'string') {
+    const [h, m] = t.split(':');
+    return Number(h) * 60 + Number(m);
+  }
+  const d = new Date(t);
+  return d.getUTCHours() * 60 + d.getUTCMinutes();
+}
+
+/**
+ * Computes lateness / early leave / regular & overtime minutes for a shift and a pair of punches.
+ */
+export function computeAttendanceMetrics(shift, checkIn, checkOut) {
+  let late = 0;
+  let early = 0;
+  let regular = 0;
+  let overtime = 0;
+  let status = 'Presente';
+
+  const ci = checkIn ? new Date(checkIn) : null;
+  const co = checkOut ? new Date(checkOut) : null;
+  const startM = timeToMinutes(shift?.StartTime);
+  const endM = timeToMinutes(shift?.EndTime);
+  const grace = shift?.GraceMinutes ?? 15;
+
+  if (ci && startM != null) {
+    const diff = ci.getHours() * 60 + ci.getMinutes() - startM;
+    if (diff > grace) {
+      late = diff;
+      status = 'Tardanza';
+    }
+  }
+
+  if (ci && co) {
+    const total = Math.max(0, Math.floor((co - ci) / 60000));
+    const breakMins = shift?.BreakMinutes ?? 60;
+    const worked = Math.max(0, total - breakMins);
+
+    if (endM != null) {
+      const outM = co.getHours() * 60 + co.getMinutes();
+      if (outM < endM) early = endM - outM;
+    }
+
+    const standard = 8 * 60;
+    if (worked > standard) {
+      regular = standard;
+      overtime = worked - standard;
+    } else {
+      regular = worked;
+    }
+  }
+
+  return { late, early, regular, overtime, status };
+}
+
+/**
  * Lists work shifts for a company
  */
 export async function listWorkShifts(pool, companyId) {
@@ -30,8 +96,8 @@ export async function saveWorkShift(pool, companyId, data, shiftId = null) {
     .input('type', sql.NVarChar(30), data.shiftType || 'Regular')
     .input('start', sql.VarChar(8), data.startTime)
     .input('end', sql.VarChar(8), data.endTime)
-    .input('grace', sql.Int, Number(data.graceMinutes || 15))
-    .input('break', sql.Int, Number(data.breakMinutes || 60))
+    .input('grace', sql.Int, Number(data.graceMinutes ?? 15))
+    .input('break', sql.Int, Number(data.breakMinutes ?? 60))
     .input('days', sql.VarChar(7), data.workDaysMask || '1111100');
 
   if (shiftId) {
@@ -86,35 +152,31 @@ export async function getEmployeeShift(pool, employeeId, companyId) {
 }
 
 /**
+ * Today's attendance row (if any) for an employee
+ */
+export async function getAttendanceForDate(pool, employeeId, workDate) {
+  const res = await pool.request()
+    .input('empId', sql.Int, employeeId)
+    .input('workDate', sql.Date, workDate)
+    .query(`
+      SELECT Id, EmployeeId, WorkDate, ShiftId, CheckInTime, CheckOutTime, LateMinutes, EarlyLeaveMinutes,
+             RegularMinutes, OvertimeMinutes, Status, Notes
+      FROM dbo.HrAttendance
+      WHERE EmployeeId = @empId AND WorkDate = @workDate;
+    `);
+  return res.recordset[0] || null;
+}
+
+/**
  * Records employee check-in (Marca de Entrada)
  */
 export async function recordCheckIn(pool, { companyId, employeeId, checkInTime = null, notes = null }) {
   const now = checkInTime ? new Date(checkInTime) : new Date();
-  const workDate = now.toISOString().slice(0, 10);
+  const workDate = localDateStr(now);
 
   const shift = await getEmployeeShift(pool, employeeId, companyId);
   const shiftId = shift ? shift.Id : null;
-
-  let lateMinutes = 0;
-  let status = 'Presente';
-
-  if (shift && shift.StartTime) {
-    const shiftStart = new Date(shift.StartTime);
-    const startHour = shiftStart.getUTCHours();
-    const startMin = shiftStart.getUTCMinutes();
-
-    const checkHour = now.getHours();
-    const checkMin = now.getMinutes();
-
-    const shiftMinutes = (startHour * 60) + startMin;
-    const checkMinutes = (checkHour * 60) + checkMin;
-    const diff = checkMinutes - shiftMinutes;
-
-    if (diff > (shift.GraceMinutes || 15)) {
-      lateMinutes = diff;
-      status = 'Tardanza';
-    }
-  }
+  const { late: lateMinutes, status } = computeAttendanceMetrics(shift, now, null);
 
   const result = await pool.request()
     .input('companyId', sql.Int, companyId)
@@ -146,11 +208,11 @@ export async function recordCheckIn(pool, { companyId, employeeId, checkInTime =
 }
 
 /**
- * Records employee check-out (Marca de Salida)
+ * Records employee check-out (Marca de Salida). Requires a prior check-in for the day.
  */
 export async function recordCheckOut(pool, { companyId, employeeId, checkOutTime = null, notes = null }) {
   const now = checkOutTime ? new Date(checkOutTime) : new Date();
-  const workDate = now.toISOString().slice(0, 10);
+  const workDate = localDateStr(now);
 
   const existingRes = await pool.request()
     .input('empId', sql.Int, employeeId)
@@ -164,78 +226,85 @@ export async function recordCheckOut(pool, { companyId, employeeId, checkOutTime
     `);
 
   const existing = existingRes.recordset[0];
-  const shift = existing?.ShiftId ? { StartTime: existing.StartTime, EndTime: existing.EndTime, BreakMinutes: existing.BreakMinutes } : await getEmployeeShift(pool, employeeId, companyId);
-
-  let earlyMinutes = 0;
-  let regularMinutes = 0;
-  let overtimeMinutes = 0;
-
-  if (existing?.CheckInTime) {
-    const checkIn = new Date(existing.CheckInTime);
-    const totalMinutes = Math.max(0, Math.floor((now - checkIn) / 60000));
-    const breakMins = shift?.BreakMinutes || 60;
-    const workedMins = Math.max(0, totalMinutes - breakMins);
-
-    // If shift exists, calculate scheduled minutes
-    if (shift && shift.EndTime) {
-      const shiftEnd = new Date(shift.EndTime);
-      const endHour = shiftEnd.getUTCHours();
-      const endMin = shiftEnd.getUTCMinutes();
-      const shiftEndMinutes = (endHour * 60) + endMin;
-
-      const outHour = now.getHours();
-      const outMin = now.getMinutes();
-      const outMinutes = (outHour * 60) + outMin;
-
-      if (outMinutes < shiftEndMinutes) {
-        earlyMinutes = shiftEndMinutes - outMinutes;
-      }
-
-      const standardScheduledMins = 8 * 60; // 8 hours standard
-      if (workedMins > standardScheduledMins) {
-        regularMinutes = standardScheduledMins;
-        overtimeMinutes = workedMins - standardScheduledMins;
-      } else {
-        regularMinutes = workedMins;
-      }
-    } else {
-      regularMinutes = workedMins;
-    }
+  if (!existing?.CheckInTime) {
+    const err = new Error('No existe una marca de entrada para hoy. Registre primero su entrada.');
+    err.status = 409;
+    throw err;
   }
 
+  const shift = existing.ShiftId
+    ? { Id: existing.ShiftId, StartTime: existing.StartTime, EndTime: existing.EndTime, BreakMinutes: existing.BreakMinutes }
+    : await getEmployeeShift(pool, employeeId, companyId);
+
+  const { early, regular, overtime } = computeAttendanceMetrics(shift, existing.CheckInTime, now);
+
   const result = await pool.request()
-    .input('companyId', sql.Int, companyId)
-    .input('empId', sql.Int, employeeId)
-    .input('workDate', sql.Date, workDate)
-    .input('shiftId', sql.Int, shift?.Id || null)
+    .input('id', sql.BigInt, existing.Id)
     .input('checkOut', sql.DateTime2(0), now)
-    .input('early', sql.Int, earlyMinutes)
-    .input('regular', sql.Int, regularMinutes)
-    .input('overtime', sql.Int, overtimeMinutes)
+    .input('early', sql.Int, early)
+    .input('regular', sql.Int, regular)
+    .input('overtime', sql.Int, overtime)
     .input('notes', sql.NVarChar(500), notes || null)
     .query(`
-      MERGE dbo.HrAttendance AS target
-      USING (VALUES (@companyId, @empId, @workDate)) AS source (CompanyId, EmployeeId, WorkDate)
-      ON target.EmployeeId = source.EmployeeId AND target.WorkDate = source.WorkDate
-      WHEN MATCHED THEN
-        UPDATE SET
-          CheckOutTime = @checkOut,
+      UPDATE dbo.HrAttendance
+      SET CheckOutTime = @checkOut,
           EarlyLeaveMinutes = @early,
           RegularMinutes = @regular,
           OvertimeMinutes = @overtime,
-          Notes = CASE WHEN @notes IS NOT NULL THEN @notes ELSE target.Notes END,
+          Notes = CASE WHEN @notes IS NOT NULL THEN @notes ELSE Notes END,
           UpdatedAt = SYSUTCDATETIME()
-      WHEN NOT MATCHED THEN
-        INSERT (CompanyId, EmployeeId, WorkDate, ShiftId, CheckOutTime, EarlyLeaveMinutes, RegularMinutes, OvertimeMinutes, Status, Notes)
-        VALUES (@companyId, @empId, @workDate, @shiftId, @checkOut, @early, @regular, @overtime, N'Presente', @notes)
-      OUTPUT INSERTED.Id, INSERTED.WorkDate, INSERTED.CheckInTime, INSERTED.CheckOutTime, INSERTED.RegularMinutes, INSERTED.OvertimeMinutes;
+      OUTPUT INSERTED.Id, INSERTED.WorkDate, INSERTED.CheckInTime, INSERTED.CheckOutTime, INSERTED.RegularMinutes, INSERTED.OvertimeMinutes
+      WHERE Id = @id;
     `);
 
   return result.recordset[0];
 }
 
 /**
- * Lists attendance records with filters and pagination
+ * Overwrites punches of a day (used when an approved correction is applied) and recomputes metrics.
+ */
+export async function setAttendanceTimes(pool, { companyId, employeeId, workDate, checkIn = null, checkOut = null, notes = null }) {
+  const shift = await getEmployeeShift(pool, employeeId, companyId);
+  const existing = await getAttendanceForDate(pool, employeeId, workDate);
+
+  const ci = checkIn ? new Date(checkIn) : (existing?.CheckInTime ? new Date(existing.CheckInTime) : null);
+  const co = checkOut ? new Date(checkOut) : (existing?.CheckOutTime ? new Date(existing.CheckOutTime) : null);
+  const m = computeAttendanceMetrics(shift, ci, co);
+
+  const result = await pool.request()
+    .input('companyId', sql.Int, companyId)
+    .input('empId', sql.Int, employeeId)
+    .input('workDate', sql.Date, workDate)
+    .input('shiftId', sql.Int, shift?.Id || null)
+    .input('checkIn', sql.DateTime2(0), ci)
+    .input('checkOut', sql.DateTime2(0), co)
+    .input('late', sql.Int, m.late)
+    .input('early', sql.Int, m.early)
+    .input('regular', sql.Int, m.regular)
+    .input('overtime', sql.Int, m.overtime)
+    .input('status', sql.NVarChar(30), m.status)
+    .input('notes', sql.NVarChar(500), notes || null)
+    .query(`
+      MERGE dbo.HrAttendance AS target
+      USING (VALUES (@empId, @workDate)) AS source (EmployeeId, WorkDate)
+      ON target.EmployeeId = source.EmployeeId AND target.WorkDate = source.WorkDate
+      WHEN MATCHED THEN
+        UPDATE SET CheckInTime = @checkIn, CheckOutTime = @checkOut, ShiftId = ISNULL(@shiftId, target.ShiftId),
+                   LateMinutes = @late, EarlyLeaveMinutes = @early, RegularMinutes = @regular,
+                   OvertimeMinutes = @overtime, Status = @status,
+                   Notes = ISNULL(@notes, target.Notes), UpdatedAt = SYSUTCDATETIME()
+      WHEN NOT MATCHED THEN
+        INSERT (CompanyId, EmployeeId, WorkDate, ShiftId, CheckInTime, CheckOutTime, LateMinutes, EarlyLeaveMinutes,
+                RegularMinutes, OvertimeMinutes, Status, Notes)
+        VALUES (@companyId, @empId, @workDate, @shiftId, @checkIn, @checkOut, @late, @early, @regular, @overtime, @status, @notes)
+      OUTPUT INSERTED.Id;
+    `);
+  return result.recordset[0];
+}
+
+/**
+ * Lists attendance records with filters and pagination.
+ * When `visibleFor` is provided, only employees visible to that user (scope rules) are returned.
  */
 export async function listAttendance(pool, {
   companyId,
@@ -246,9 +315,12 @@ export async function listAttendance(pool, {
   employeeId = null,
   status = null,
   page = 1,
-  pageSize = 20
+  pageSize = 20,
+  visibleFor = null
 }) {
-  const offset = (Math.max(1, page) - 1) * pageSize;
+  page = Math.max(1, Number(page) || 1);
+  pageSize = Math.min(10000, Math.max(1, Number(pageSize) || 20));
+  const offset = (page - 1) * pageSize;
   let where = `WHERE a.CompanyId = @companyId`;
 
   if (startDate) where += ` AND a.WorkDate >= @startDate`;
@@ -257,6 +329,7 @@ export async function listAttendance(pool, {
   if (branchId) where += ` AND e.BranchId = @branchId`;
   if (employeeId) where += ` AND a.EmployeeId = @empId`;
   if (status) where += ` AND a.Status = @status`;
+  if (visibleFor) where += ` AND a.EmployeeId IN (SELECT EmployeeId FROM dbo.fn_HrVisibleEmployees(@visUser, 0, @visCompanyAdmin))`;
 
   const req = pool.request().input('companyId', sql.Int, companyId);
   if (startDate) req.input('startDate', sql.Date, startDate);
@@ -265,6 +338,10 @@ export async function listAttendance(pool, {
   if (branchId) req.input('branchId', sql.Int, Number(branchId));
   if (employeeId) req.input('empId', sql.Int, Number(employeeId));
   if (status) req.input('status', sql.NVarChar(30), status);
+  if (visibleFor) {
+    req.input('visUser', sql.NVarChar(450), visibleFor.userId);
+    req.input('visCompanyAdmin', sql.Bit, visibleFor.isCompanyAdmin ? 1 : 0);
+  }
 
   const countQuery = `
     SELECT COUNT(*) AS total
@@ -274,16 +351,22 @@ export async function listAttendance(pool, {
   `;
 
   const dataQuery = `
-    SELECT a.Id, a.CompanyId, a.EmployeeId, a.WorkDate, a.ShiftId,
+    SELECT a.Id, a.CompanyId, a.EmployeeId, a.WorkDate, a.WorkDate AS AttendanceDate, a.ShiftId,
            a.CheckInTime, a.CheckOutTime, a.LateMinutes, a.EarlyLeaveMinutes,
-           a.RegularMinutes, a.OvertimeMinutes, a.Status, a.Notes,
+           a.RegularMinutes, a.OvertimeMinutes,
+           CAST(a.RegularMinutes / 60.0 AS DECIMAL(6,2)) AS RegularHours,
+           CAST(a.OvertimeMinutes / 60.0 AS DECIMAL(6,2)) AS OvertimeHours,
+           a.Status, a.Notes,
            CONCAT(e.FirstName, N' ', e.LastName) AS EmployeeName,
+           e.FirstName, e.LastName,
            e.EmployeeCode,
+           p.Title AS PositionTitle,
            d.Name AS DepartmentName,
            b.Name AS BranchName,
            s.Name AS ShiftName
     FROM dbo.HrAttendance a
     JOIN dbo.HrEmployees e ON e.Id = a.EmployeeId
+    LEFT JOIN dbo.HrPositions p ON p.Id = e.PositionId
     LEFT JOIN dbo.HrDepartments d ON d.Id = e.DepartmentId
     LEFT JOIN dbo.Branches b ON b.Id = e.BranchId
     LEFT JOIN dbo.HrWorkShifts s ON s.Id = a.ShiftId
@@ -319,12 +402,42 @@ export async function requestAttendanceCorrection(pool, {
   requestedCheckOut,
   reason
 }) {
-  // Check if attendance record exists
-  const attRes = await pool.request()
+  if (!requestedCheckIn && !requestedCheckOut) {
+    const err = new Error('Debe indicar al menos la hora de entrada o de salida correcta.');
+    err.status = 400;
+    throw err;
+  }
+  if (requestedCheckIn && requestedCheckOut && new Date(requestedCheckOut) <= new Date(requestedCheckIn)) {
+    const err = new Error('La hora de salida debe ser posterior a la hora de entrada.');
+    err.status = 400;
+    throw err;
+  }
+  if (new Date(`${workDate}T00:00:00`) > new Date()) {
+    const err = new Error('No se puede corregir la asistencia de una fecha futura.');
+    err.status = 400;
+    throw err;
+  }
+
+  const empRes = await pool.request()
+    .input('id', sql.Int, employeeId)
+    .query('SELECT CompanyId FROM dbo.HrEmployees WHERE Id = @id;');
+  if (!empRes.recordset[0] || empRes.recordset[0].CompanyId !== Number(companyId)) {
+    const err = new Error('Empleado no encontrado en la empresa.');
+    err.status = 404;
+    throw err;
+  }
+
+  const dup = await pool.request()
     .input('empId', sql.Int, employeeId)
     .input('date', sql.Date, workDate)
-    .query('SELECT Id, CheckInTime, CheckOutTime FROM dbo.HrAttendance WHERE EmployeeId = @empId AND WorkDate = @date;');
-  const existing = attRes.recordset[0];
+    .query(`SELECT TOP 1 Id FROM dbo.HrAttendanceCorrections WHERE EmployeeId = @empId AND WorkDate = @date AND Status = N'Pendiente';`);
+  if (dup.recordset[0]) {
+    const err = new Error('Ya existe una solicitud de corrección pendiente para esa fecha.');
+    err.status = 409;
+    throw err;
+  }
+
+  const existing = await getAttendanceForDate(pool, employeeId, workDate);
 
   const corrRes = await pool.request()
     .input('attId', sql.BigInt, existing?.Id || null)
@@ -369,38 +482,30 @@ export async function requestAttendanceCorrection(pool, {
 }
 
 /**
- * Applies approved attendance correction
+ * Applies approved attendance correction (overwrites punches and recomputes metrics)
  */
 export async function applyAttendanceCorrection(pool, correctionId) {
   const corrRes = await pool.request()
     .input('id', sql.Int, correctionId)
     .query('SELECT * FROM dbo.HrAttendanceCorrections WHERE Id = @id;');
   const corr = corrRes.recordset[0];
-  if (!corr) return;
+  if (!corr || corr.Status === 'Aprobada') return;
 
   const empRes = await pool.request()
     .input('id', sql.Int, corr.EmployeeId)
     .query('SELECT CompanyId FROM dbo.HrEmployees WHERE Id = @id;');
   const companyId = empRes.recordset[0]?.CompanyId;
 
-  // Record check in and check out
-  if (corr.RequestedCheckIn) {
-    await recordCheckIn(pool, {
-      companyId,
-      employeeId: corr.EmployeeId,
-      checkInTime: corr.RequestedCheckIn,
-      notes: `Corrección aprobada: ${corr.Reason}`
-    });
-  }
+  const workDate = new Date(corr.WorkDate).toISOString().slice(0, 10);
 
-  if (corr.RequestedCheckOut) {
-    await recordCheckOut(pool, {
-      companyId,
-      employeeId: corr.EmployeeId,
-      checkOutTime: corr.RequestedCheckOut,
-      notes: `Corrección aprobada: ${corr.Reason}`
-    });
-  }
+  await setAttendanceTimes(pool, {
+    companyId,
+    employeeId: corr.EmployeeId,
+    workDate,
+    checkIn: corr.RequestedCheckIn,
+    checkOut: corr.RequestedCheckOut,
+    notes: `Corrección aprobada: ${corr.Reason}`
+  });
 
   await pool.request()
     .input('id', sql.Int, correctionId)

@@ -1,4 +1,4 @@
-import { state } from '../../core/state.js';
+import { state, hasPermission } from '../../core/state.js';
 import { escapeHtml, badge } from '../../components/utils.js';
 import { breadcrumb, pageHeader } from '../../components/ui.js';
 
@@ -7,9 +7,9 @@ export function positionsView() {
 
   return `
     ${breadcrumb([['dashboard', 'Inicio'], ['hr-dashboard', 'Recursos Humanos'], ['hr-positions', 'Cargos']])}
-    ${pageHeader('Cargos y Puestos de Trabajo', 'Estructura ocupacional, responsabilidades y bandas salariales referenciales.', `
-      <button class="primary" data-action="open-position-modal">＋ Nuevo cargo</button>
-    `)}
+    ${pageHeader('Cargos y Puestos de Trabajo', 'Estructura ocupacional, responsabilidades y bandas salariales referenciales.', 
+      hasPermission('RRHH Estructura', 'Administrar departamentos y cargos') ? '<button class="primary" data-action="open-position-modal">＋ Nuevo cargo</button>' : ''
+    )}
 
     <div class="panel">
       <div class="table-wrap">
@@ -55,7 +55,12 @@ export function positionsView() {
                     ${badge(p.IsActive ? 'Activo' : 'Inactivo')}
                   </td>
                   <td style="text-align:right;">
-                    <button class="row-action" data-action="edit-position" data-id="${p.Id}">Editar</button>
+                    <div style="display:inline-flex; gap:6px; justify-content:flex-end;">
+                      <button class="row-action" data-action="edit-position" data-id="${p.Id}">Editar</button>
+                      ${hasPermission('RRHH Estructura', 'Administrar departamentos y cargos') ? `
+                        <button class="row-action" style="color:var(--danger,#ef4444);" data-action="delete-position" data-id="${p.Id}" data-title="${escapeHtml(p.Title)}">Eliminar</button>
+                      ` : ''}
+                    </div>
                   </td>
                 </tr>
               `;
