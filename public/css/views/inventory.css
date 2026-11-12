@@ -1,0 +1,196 @@
+/* ==========================================================================
+   INVENTORY & STOCK MODULE VIEWS
+   Selectores de Entradas/Salidas, Kardex y Alertas de Stock Crítico
+   ========================================================================== */
+
+/* ── Movement & Alert Type Selectors ───────────────────────── */
+.movement-type-selector,
+.alert-type-selector {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.alert-type-selector {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+@media (max-width: 800px) {
+  .movement-type-selector,
+  .alert-type-selector {
+    grid-template-columns: 1fr;
+  }
+}
+
+.movement-type-card,
+.alert-type-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1.5px solid #e2e8f0;
+  background: #ffffff;
+  cursor: pointer;
+  text-align: left;
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+
+.movement-type-card:hover,
+.alert-type-card:hover {
+  transform: translateY(-1px);
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+}
+
+.movement-type-card.active-entrada {
+  border-color: #059669;
+  background: #ecfdf5;
+  box-shadow: 0 0 0 1px #059669, 0 4px 14px rgba(5, 150, 105, 0.15);
+}
+
+.movement-type-card.active-entrada .movement-icon-box {
+  background: #059669;
+  color: #ffffff;
+}
+
+.movement-type-card.active-salida {
+  border-color: #e11d48;
+  background: #fff1f2;
+  box-shadow: 0 0 0 1px #e11d48, 0 4px 14px rgba(225, 29, 72, 0.15);
+}
+
+.movement-type-card.active-salida .movement-icon-box {
+  background: #e11d48;
+  color: #ffffff;
+}
+
+.alert-type-card.active-all {
+  border-color: #2563eb;
+  background: #eff6ff;
+  box-shadow: 0 0 0 1px #2563eb, 0 4px 14px rgba(37, 99, 235, 0.15);
+}
+
+.alert-type-card.active-critical {
+  border-color: #e11d48;
+  background: #fff1f2;
+  box-shadow: 0 0 0 1px #e11d48, 0 4px 14px rgba(225, 29, 72, 0.15);
+}
+
+.alert-type-card.active-warning {
+  border-color: #d97706;
+  background: #fffbeb;
+  box-shadow: 0 0 0 1px #d97706, 0 4px 14px rgba(217, 119, 6, 0.15);
+}
+
+.movement-icon-box,
+.alert-icon-box {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  font-size: 20px;
+  background: #f1f5f9;
+  color: #475569;
+  transition: all 0.2s ease;
+}
+
+.alert-icon-box.blue  { background: #eff6ff; color: #2563eb; }
+.alert-icon-box.red   { background: #fff1f2; color: #e11d48; }
+.alert-icon-box.amber { background: #fffbeb; color: #d97706; }
+
+.movement-type-card strong,
+.alert-type-card strong {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 2px;
+}
+
+.movement-type-card small,
+.alert-type-card small {
+  display: block;
+  font-size: 11.5px;
+  color: #64748b;
+  line-height: 1.35;
+}
+
+/* ── Movement Capture Form Grid ────────────────────────────── */
+.movement-form-grid {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr 1fr auto;
+  gap: 14px;
+  align-items: flex-end;
+}
+
+@media (max-width: 900px) {
+  .movement-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.movement-submit-btn {
+  height: 38px;
+  width: 100%;
+  padding: 0 20px;
+  border-radius: 8px;
+  border: none;
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  color: #ffffff;
+  transition: all 0.18s ease;
+  white-space: nowrap;
+}
+
+.movement-submit-btn.entry {
+  background: #059669;
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.3);
+}
+
+.movement-submit-btn.entry:hover {
+  background: #047857;
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.35);
+  transform: translateY(-1px);
+}
+
+.movement-submit-btn.exit {
+  background: #e11d48;
+  box-shadow: 0 2px 8px rgba(225, 29, 72, 0.3);
+}
+
+.movement-submit-btn.exit:hover {
+  background: #be123c;
+  box-shadow: 0 4px 12px rgba(225, 29, 72, 0.35);
+  transform: translateY(-1px);
+}
+
+/* ── Alert Progress Bar ────────────────────────────────────── */
+.alert-progress-bar-wrap {
+  width: 100%;
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 3px;
+}
+
+.alert-progress-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.alert-progress-bar.zero { background: #e11d48; }
+.alert-progress-bar.low  { background: #d97706; }
+

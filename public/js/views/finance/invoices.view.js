@@ -1,15 +1,20 @@
-import { state } from '../../core/state.js';
+import { state, hasPermission } from '../../core/state.js';
 import { escapeHtml, displayDate, badge, initials } from '../../components/utils.js';
+import { breadcrumb, pageHeader } from '../../components/ui.js';
 
 export function financeInvoicesView() {
+  const canCreate = hasPermission('Finanzas', 'Registrar transacciones');
   return `
+    ${breadcrumb([['finance', 'Finanzas'], ['finance-invoices', 'Facturas']])}
+    ${pageHeader('Facturación y Documentos Fiscales', 'Cuentas por cobrar y cuentas por pagar con comprobantes fiscales NCF.', canCreate ? '<button class="primary" data-action="new-invoice">＋ Nueva factura</button>' : '')}
+
     <div class="panel">
       <div class="panel-head">
         <div>
-          <h2>Facturación y Documentos Fiscales</h2>
-          <p class="panel-note">Cuentas por cobrar y cuentas por pagar con NCF</p>
+          <h2>Cartera de Facturas</h2>
+          <p class="panel-note">Comprobantes fiscales emitidos y recibidos</p>
         </div>
-        <button class="primary" data-action="new-invoice">＋ Nueva factura</button>
+        <span class="panel-note">${state.finance.invoices.length} facturas</span>
       </div>
       <div class="table-wrap">
         <table>

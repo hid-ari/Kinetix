@@ -1,5 +1,6 @@
 import { state } from '../../core/state.js';
 import { escapeHtml, initials } from '../../components/utils.js';
+import { breadcrumb } from '../../components/ui.js';
 
 export function vacationsView() {
   const balance = state.hr.vacationBalance || {
@@ -45,6 +46,7 @@ export function vacationsView() {
   };
 
   return `
+    ${breadcrumb([['dashboard', 'Inicio'], ['hr-dashboard', 'Recursos Humanos'], ['hr-vacations', 'Vacaciones y Licencias']])}
     <div class="hr-view">
       <!-- Encabezado de Vacaciones y Permisos -->
       <div class="view-header">
@@ -146,7 +148,7 @@ export function vacationsView() {
               <thead>
                 <tr>
                   <th>Folio</th>
-                  <th>Colaborador</th>
+                  <th>Empleado</th>
                   <th>Fecha Inicio</th>
                   <th>Fecha Fin</th>
                   <th>Días Solicitados</th>
@@ -169,7 +171,7 @@ export function vacationsView() {
                     </td>
                   </tr>
                 ` : vacationRequests.map(v => {
-                  const empName = v.EmployeeName || (v.FirstName ? `${v.FirstName} ${v.LastName}` : 'Colaborador');
+                  const empName = v.EmployeeName || (v.FirstName ? `${v.FirstName} ${v.LastName}` : 'Empleado');
                   const empInit = initials(empName);
                   return `
                   <tr>
@@ -212,7 +214,7 @@ export function vacationsView() {
               <thead>
                 <tr>
                   <th>Folio</th>
-                  <th>Colaborador</th>
+                  <th>Empleado</th>
                   <th>Tipo de Licencia</th>
                   <th>Desde</th>
                   <th>Hasta</th>
@@ -236,7 +238,7 @@ export function vacationsView() {
                     </td>
                   </tr>
                 ` : leaveRequests.map(l => {
-                  const empName = l.EmployeeName || (l.FirstName ? `${l.FirstName} ${l.LastName}` : 'Colaborador');
+                  const empName = l.EmployeeName || (l.FirstName ? `${l.FirstName} ${l.LastName}` : 'Empleado');
                   const empInit = initials(empName);
                   return `
                   <tr>

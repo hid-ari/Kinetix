@@ -19,6 +19,12 @@ export const state = {
   auditModule: '',
   auditAction: '',
   branches: [],
+  branchEditId: null,
+  userEditId: null,
+  branchUsers: [],
+  branchManagers: [],
+  branchCompanyFilter: '',
+  branchStatusFilter: '',
   roles: [],
   permissions: [],
   audit: [],
@@ -26,7 +32,6 @@ export const state = {
   stock: [],
   movements: [],
   finance: { income: 0, expense: 0, transactions: [], invoices: [], contacts: [], bank: [] },
-  financeTab: 'overview',
   movementType: 'Entrada',
   alertSeverityFilter: 'all',
   hr: {
@@ -179,6 +184,10 @@ export function canAccessView(viewId) {
     case 'alerts':
       return hasPermission('Alertas', 'Ver alertas');
     case 'finance':
+    case 'finance-transactions':
+    case 'finance-invoices':
+    case 'finance-contacts':
+    case 'finance-banking':
       return hasPermission('Finanzas', 'Ver finanzas');
     case 'profile':
       return true;

@@ -74,7 +74,7 @@ export function employeesView() {
           </select>
           <button class="secondary" data-action="clear-hr-filters" style="padding:6px 12px; font-size:12px;">Limpiar</button>
         </div>
-        <span class="panel-note">${total} colaboradores</span>
+        <span class="panel-note">${total} empleados</span>
       </div>
 
       <!-- Employees Table -->
@@ -86,7 +86,7 @@ export function employeesView() {
               <th>Código</th>
               <th>Cargo / Departamento</th>
               <th>Sucursal</th>
-              <th>Tipo de Contrato</th>
+              <th>Acceso Kinetix</th>
               <th>Estado</th>
               <th style="text-align:right;">Expediente</th>
             </tr>
@@ -119,7 +119,12 @@ export function employeesView() {
                   </td>
                   <td><span class="tag-neutral">${escapeHtml(emp.BranchName || 'General')}</span></td>
                   <td>
-                    <small style="font-weight:600; color:var(--muted);">${escapeHtml(emp.ContractTypeName || 'Indefinido')}</small>
+                    ${emp.AccountStatus === 'Activa'
+                      ? `<span class="badge-pill badge-active" title="Cuenta activa: ${escapeHtml(emp.UserAccountEmail || '')}">Activo · ${escapeHtml(emp.UserRole || 'Empleado')}</span>`
+                      : emp.AccountStatus === 'Invitación pendiente'
+                      ? `<span class="badge-pill badge-warning" title="Invitación enviada pendiente de activación">Invitación pendiente</span>`
+                      : `<span class="badge-pill badge-inactive" title="Solo registro laboral en RRHH">Sin acceso</span>`
+                    }
                   </td>
                   <td>${hrBadge(emp.Status)}</td>
                   <td style="text-align:right;">

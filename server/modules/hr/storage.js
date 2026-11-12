@@ -3,16 +3,14 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import multer from 'multer';
+import { badRequest } from '../../core/http.js';
 
-// Storage directory outside /public
 const storageRootDir = path.resolve(process.cwd(), 'storage', 'hr');
 
-// Ensure directories exist
 if (!fs.existsSync(storageRootDir)) {
   fs.mkdirSync(storageRootDir, { recursive: true });
 }
 
-// Memory storage for multer so we can compute sha256 and store with custom structure
 const memoryStorage = multer.memoryStorage();
 
 export const uploadPhoto = multer({
@@ -23,7 +21,7 @@ export const uploadPhoto = multer({
     if (allowed.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Solo se permiten imágenes JPEG, PNG o WebP para la fotografía.'));
+      cb(badRequest('Solo se permiten imágenes JPEG, PNG o WebP para la fotografía.'));
     }
   }
 });
@@ -45,50 +43,78 @@ export const uploadDocument = multer({
     if (allowed.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Tipo de archivo no permitido. Solo PDF, Word, Excel, texto o imágenes.'));
+      cb(badRequest('Tipo de archivo no permitido. Solo PDF, Word, Excel, texto o imágenes.'));
     }
   }
 });
 
 /**
- * Saves a buffer to disk with sha256 content addressing and registers it in dbo.HrFiles.
+ * Wraps a multer middleware so file size and filter errors return 400 JSON responses cleanly.
+ */
+export function withUpload(multerMiddleware) {
+  return (req, res, next) => {
+    multerMiddleware(req, res, err => {
+      if (!err) return next();
+      if (err instanceof multer.MulterError) {
+        const msg = err.code === 'LIMIT_FILE_SIZE'
+          ? 'El archivo excede el tamaño máximo permitido.'
+          : `Error al procesar archivo: ${err.message}`;
+        return res.status(400).json({ message: msg });
+      }
+      return res.status(err.status || 400).json({ message: err.message || 'Archivo no válido.' });
+    });
+  };
+}
+
+/**
+ * Saves a buffer to disk with sha256 content addressing and registers it in HrFiles.
  */
 export async function saveFile({ pool, buffer, originalName, mimeType, companyId, userId, folder = 'docs' }) {
   const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
-  const ext = path.extname(originalName) || '';
+  const safeExt = (path.extname(originalName) || '').replace(/[^a-zA-Z0-9.]/g, '').slice(0, 10);
   const fileUuid = crypto.randomUUID();
-  const filename = `${fileUuid}_${sha256.slice(0, 16)}${ext}`;
+  const filename = `${fileUuid}_${sha256.slice(0, 16)}${safeExt}`;
 
-  const targetDir = path.join(storageRootDir, String(companyId), folder);
+  const safeFolder = String(folder).replace(/[^a-zA-Z0-9_-]/g, '') || 'docs';
+  const targetDir = path.join(storageRootDir, String(Number(companyId) || 0), safeFolder);
   await fsp.mkdir(targetDir, { recursive: true });
 
   const diskPath = path.join(targetDir, filename);
   await fsp.writeFile(diskPath, buffer);
 
-  // Storage key relative to storage root
-  const storageKey = path.join(String(companyId), folder, filename).replace(/\\/g, '/');
+  const storageKey = path.join(String(Number(companyId) || 0), safeFolder, filename).replace(/\\/g, '/');
 
-  const result = await pool.request()
-    .input('id', fileUuid)
-    .input('companyId', companyId)
-    .input('storageKey', storageKey)
-    .input('originalName', originalName)
-    .input('mimeType', mimeType)
-    .input('sizeBytes', buffer.length)
-    .input('sha256', sha256)
-    .input('uploadedBy', userId || null)
-    .query(`
-      INSERT INTO dbo.HrFiles (Id, CompanyId, StorageKey, OriginalName, MimeType, SizeBytes, Sha256, UploadedBy)
-      OUTPUT INSERTED.Id, INSERTED.OriginalName, INSERTED.MimeType, INSERTED.SizeBytes, INSERTED.Sha256
-      VALUES (@id, @companyId, @storageKey, @originalName, @mimeType, @sizeBytes, @sha256, @uploadedBy);
-    `);
+  const file = await pool.insert('HrFiles', {
+    Id: fileUuid,
+    CompanyId: companyId,
+    StorageKey: storageKey,
+    OriginalName: String(originalName || 'archivo').slice(0, 255),
+    MimeType: mimeType,
+    SizeBytes: buffer.length,
+    Sha256: sha256,
+    UploadedBy: userId || null
+  });
 
-  return result.recordset[0];
+  return {
+    Id: file.Id,
+    OriginalName: file.OriginalName,
+    MimeType: file.MimeType,
+    SizeBytes: file.SizeBytes,
+    Sha256: file.Sha256
+  };
 }
 
 /**
- * Resolves full path on disk for a given storageKey
+ * Resolves full path on disk for a given storageKey and prevents directory traversal outside storageRootDir.
  */
 export function getFilePath(storageKey) {
-  return path.resolve(storageRootDir, storageKey);
+  if (!storageKey || typeof storageKey !== 'string') {
+    throw badRequest('Clave de almacenamiento inválida.');
+  }
+  const resolved = path.resolve(storageRootDir, storageKey);
+  const rootWithSep = storageRootDir.endsWith(path.sep) ? storageRootDir : storageRootDir + path.sep;
+  if (resolved !== storageRootDir && !resolved.startsWith(rootWithSep)) {
+    throw badRequest('Ruta de archivo fuera del directorio permitido.');
+  }
+  return resolved;
 }

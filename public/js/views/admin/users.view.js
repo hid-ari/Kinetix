@@ -3,13 +3,13 @@ import { escapeHtml, badge, initials as getInitials } from '../../components/uti
 import { breadcrumb, pageHeader } from '../../components/ui.js';
 
 export function users() {
-  const items = state.users.filter(u => `${u.name} ${u.email} ${u.company}`.toLowerCase().includes(state.query.toLowerCase()) && (!state.usersStatusFilter || u.status === state.usersStatusFilter));
+  const items = state.users.filter(u => `${u.name} ${u.email}`.toLowerCase().includes(state.query.toLowerCase()) && (!state.usersStatusFilter || u.status === state.usersStatusFilter));
   const pageCount = Math.max(Math.ceil(state.usersTotal / state.usersPageSize), 1);
   const start = state.usersTotal ? ((state.usersPage - 1) * state.usersPageSize) + 1 : 0;
   const end = start ? Math.min(start + items.length - 1, state.usersTotal) : 0;
   return `
     ${breadcrumb([['dashboard', 'Administración'], ['users', 'Usuarios']])}
-    ${pageHeader('Usuarios', 'Controla identidades, perfiles y acceso multi-inquilino por empresa.', hasPermission('Usuarios', 'Crear usuarios') ? '<button class="primary" data-action="new-user">＋ Nuevo usuario</button>' : '')}
+    ${pageHeader('Usuarios', 'Controla identidades, perfiles y permisos de acceso del personal.', hasPermission('Usuarios', 'Crear usuarios') ? '<button class="primary" data-action="new-user">＋ Nuevo usuario</button>' : '')}
     <div class="panel">
       <div class="table-toolbar">
         <div class="filter-row">
@@ -27,9 +27,9 @@ export function users() {
           <thead>
             <tr>
               <th>Usuario</th>
-              <th>Empresa</th>
               <th>Sucursal</th>
               <th>Rol de Acceso</th>
+              <th>Expediente RRHH</th>
               <th>Estado</th>
               <th>Último Acceso</th>
               <th style="text-align:right;">Acciones</th>
@@ -51,13 +51,27 @@ export function users() {
                       </div>
                     </div>
                   </td>
-                  <td><strong>${escapeHtml(u.company)}</strong></td>
                   <td>${escapeHtml(u.branch || 'Todas')}</td>
                   <td><span class="tag-neutral">${escapeHtml(u.role)}</span></td>
+                  <td>
+                    ${u.employeeId
+                      ? `<button type="button" class="row-action" data-hr-detail="employee" data-id="${u.employeeId}" title="Ver expediente de ${escapeHtml(u.employeeName || u.name)}" style="font-size:12px;">#${escapeHtml(u.employeeCode || u.employeeId)} →</button>`
+                      : '<span class="badge-pill neutral"><span class="badge-pill-dot"></span>Sin expediente</span>'}
+                  </td>
                   <td>${badge(u.status)}</td>
                   <td><span style="font-variant-numeric:tabular-nums; color:var(--muted); font-size:12px;">${u.last}</span></td>
                   <td style="text-align:right;">
                     <button class="row-action" data-detail="user" data-id="${u.id}">Ver detalle →</button>
+                    ${hasPermission('Usuarios', 'Editar usuarios') ? `
+                      <button class="row-action" data-action="edit-user" data-id="${u.id}" style="color:var(--primary,#3b82f6);margin-left:6px;" title="Editar usuario">
+                        Editar
+                      </button>
+                    ` : ''}
+                    ${hasPermission('Usuarios', 'Desactivar usuarios') && u.id !== state.currentUser?.userId && u.role !== 'Super Admin' ? `
+                      <button class="row-action" data-action="delete-user" data-id="${u.id}" data-name="${escapeHtml(u.name)}" style="color:var(--danger,#ef4444);margin-left:6px;" title="Eliminar usuario">
+                        Eliminar
+                      </button>
+                    ` : ''}
                   </td>
                 </tr>
               `;

@@ -1,21 +1,23 @@
-import { state, hasPermission } from '../../core/state.js';
-import { escapeHtml, badge, initials as getInitials } from '../../components/utils.js';
+import { state, isSuperAdmin } from '../../core/state.js';
+import { escapeHtml, badge } from '../../components/utils.js';
 import { breadcrumb, pageHeader } from '../../components/ui.js';
 
 export function myCompany() {
   const company = state.companies[0];
   if (!company) {
-    return `${breadcrumb([['dashboard', 'Inicio'], ['companies', 'Mi empresa']])}${pageHeader('Mi empresa', 'No hay una organización disponible para tu usuario.')}<div class="panel empty">No se encontró el perfil de la empresa.</div>`;
+    return `${breadcrumb([['dashboard', 'Inicio'], ['companies', 'Administración']])}${pageHeader('Administración', 'No hay información disponible de la empresa.')}<div class="panel empty">No se encontró el perfil de la empresa.</div>`;
   }
-  
+
   const initials = escapeHtml((company.name || 'Empresa').slice(0, 2).toUpperCase());
   const rncFormatted = escapeHtml(company.rnc || 'Sin RNC');
   const emailFormatted = escapeHtml(company.email || 'Sin correo de contacto registrado');
-  
+  const phoneFormatted = escapeHtml(company.phone || 'No registrado');
+  const addressFormatted = escapeHtml(company.address || 'No registrada');
+
   return `
-    ${breadcrumb([['dashboard', 'Inicio'], ['companies', 'Mi empresa']])}
-    ${pageHeader('Mi empresa', 'Información general de tu organización y alcance operativo en Kinetix.')}
-    
+    ${breadcrumb([['dashboard', 'Inicio'], ['companies', 'Administración']])}
+    ${pageHeader('Resumen de Administración', 'Información general de la organización, usuarios y alcance operativo en Kinetix.')}
+
     <div class="company-hero-card">
       <div class="company-hero-main">
         <div class="company-hero-avatar">${initials}</div>
@@ -29,6 +31,12 @@ export function myCompany() {
         </div>
       </div>
       <div class="inline-actions">
+        ${isSuperAdmin() ? `
+          <button class="secondary" data-action="edit-company" data-id="${company.id}">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:15px;height:15px;"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>
+            <span>Editar empresa</span>
+          </button>
+        ` : ''}
         <button class="secondary" data-nav="branches">
           <svg viewBox="0 0 20 20" fill="currentColor" style="width:15px;height:15px;"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>
           <span>Ver sucursales</span>
@@ -122,6 +130,26 @@ export function myCompany() {
             
             <div class="company-info-tile">
               <div class="company-info-icon">
+                <svg viewBox="0 0 20 20" fill="currentColor" style="width:18px;height:18px;"><path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"/></svg>
+              </div>
+              <div class="company-info-text">
+                <span>Teléfono principal</span>
+                <strong>${phoneFormatted}</strong>
+              </div>
+            </div>
+
+            <div class="company-info-tile">
+              <div class="company-info-icon">
+                <svg viewBox="0 0 20 20" fill="currentColor" style="width:18px;height:18px;"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>
+              </div>
+              <div class="company-info-text">
+                <span>Domicilio fiscal</span>
+                <strong>${addressFormatted}</strong>
+              </div>
+            </div>
+
+            <div class="company-info-tile">
+              <div class="company-info-icon">
                 <svg viewBox="0 0 20 20" fill="currentColor" style="width:18px;height:18px;"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
               </div>
               <div class="company-info-text">
@@ -140,7 +168,7 @@ export function myCompany() {
         </div>
         <div class="panel-body">
           <p class="subtitle" style="margin-top:0; margin-bottom:18px; line-height:1.5;">
-            La información expuesta en este portal pertenece exclusivamente a la empresa <strong>${escapeHtml(company.name)}</strong>. Todos los accesos y registros están protegidos bajo aislamiento multi-inquilino.
+            La información expuesta en este portal pertenece a <strong>${escapeHtml(company.name)}</strong>. Todos los accesos y registros están protegidos por políticas de control de acceso basado en roles.
           </p>
           
           <button class="space-action-card" data-nav="users">
@@ -150,7 +178,7 @@ export function myCompany() {
               </div>
               <div>
                 <strong>Ver usuarios asignados</strong>
-                <small>Consulta lista de colaboradores y permisos</small>
+                <small>Consulta lista de usuarios y permisos</small>
               </div>
             </div>
             <span class="space-action-arrow">→</span>
@@ -181,81 +209,6 @@ export function myCompany() {
             </div>
             <span class="space-action-arrow">→</span>
           </button>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-export function companies() {
-  const items = state.companies.filter(c => `${c.name} ${c.rnc}`.toLowerCase().includes(state.query.toLowerCase()));
-  const start = state.companiesTotal ? ((state.companiesPage - 1) * state.companiesPageSize) + 1 : 0;
-  const end = start ? Math.min(start + items.length - 1, state.companiesTotal) : 0;
-  const pageCount = Math.max(Math.ceil(state.companiesTotal / state.companiesPageSize), 1);
-  return `
-    ${breadcrumb([['dashboard', 'Administración'], ['companies', 'Empresas']])}
-    ${pageHeader('Empresas', 'Administra las organizaciones y su estado de acceso.', hasPermission('Empresas', 'Crear empresas') ? '<button class="primary" data-action="new-company">＋ Nueva empresa</button>' : '')}
-    <div class="panel">
-      <div class="table-toolbar">
-        <div class="filter-row">
-          <input id="page-search" placeholder="Buscar por nombre o RNC..." value="${escapeHtml(state.query)}" style="min-width:260px;">
-          <select>
-            <option>Todos los estados</option>
-            <option>Activa</option>
-            <option>Inactiva</option>
-          </select>
-        </div>
-        <span class="panel-note">${state.companiesTotal} empresas registradas</span>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Empresa</th>
-              <th>RNC</th>
-              <th>Usuarios</th>
-              <th>Sucursales</th>
-              <th>Estado</th>
-              <th>Fecha de Alta</th>
-              <th style="text-align:right;">Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${items.length ? items.map(c => {
-              const cInitials = getInitials(c.name || 'Empresa');
-              return `
-                <tr>
-                  <td>
-                    <div class="emp-cell-flex">
-                      <div class="emp-avatar-sm" style="width:34px;height:34px;font-size:11.5px;background:linear-gradient(135deg,#0284c7 0%,#0369a1 100%);">
-                        ${escapeHtml(cInitials)}
-                      </div>
-                      <div class="emp-cell-info">
-                        <strong>${escapeHtml(c.name)}</strong>
-                        <small>${escapeHtml(c.email)}</small>
-                      </div>
-                    </div>
-                  </td>
-                  <td><span class="folio-tag">${escapeHtml(c.rnc)}</span></td>
-                  <td><strong style="font-variant-numeric:tabular-nums;">${c.users}</strong></td>
-                  <td><strong style="font-variant-numeric:tabular-nums;">${c.branches}</strong></td>
-                  <td>${badge(c.status)}</td>
-                  <td><span style="font-variant-numeric:tabular-nums; color:var(--muted);">${c.date}</span></td>
-                  <td style="text-align:right;">
-                    <button class="row-action" data-detail="company" data-id="${c.id}">Ver detalle →</button>
-                  </td>
-                </tr>
-              `;
-            }).join('') : '<tr><td colspan="7" class="empty">No encontramos empresas con esa búsqueda.</td></tr>'}
-          </tbody>
-        </table>
-      </div>
-      <div class="pagination">
-        <span>Mostrando ${start}-${end} de ${state.companiesTotal} registros</span>
-        <div class="pages">
-          ${Array.from({ length: pageCount }, (_, index) => `
-            <button class="${index + 1 === state.companiesPage ? 'active' : ''}" data-page="${index + 1}">${index + 1}</button>
-          `).join('')}
         </div>
       </div>
     </div>

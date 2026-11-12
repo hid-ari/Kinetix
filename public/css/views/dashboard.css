@@ -1,0 +1,643 @@
+/* ==========================================================================
+   DASHBOARD & SAP FIORI LAUNCHPAD VIEWS
+   Secciones Fiori, Tiles de acceso rápido, tarjetas analíticas, gráficas y banners
+   ========================================================================== */
+
+/* ── Dashboard Executive Hero Banner ───────────────────────── */
+.dashboard-hero-banner {
+  background: linear-gradient(135deg, #090e17 0%, #0d172a 60%, #1e293b 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 24px 28px;
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  color: #ffffff;
+  box-shadow: 0 10px 25px -5px rgba(9, 14, 23, 0.25);
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboard-hero-banner::after {
+  content: "";
+  position: absolute;
+  right: -60px;
+  top: -60px;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.25) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.dashboard-hero-content h1 {
+  color: #ffffff;
+  font-size: 24px;
+  font-weight: 800;
+  margin: 4px 0 6px;
+  letter-spacing: -0.02em;
+}
+
+.dashboard-hero-content p {
+  color: #94a3b8;
+  font-size: 13.5px;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.dashboard-hero-content strong {
+  color: #f8fafc;
+}
+
+.dashboard-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(37, 99, 235, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  color: #93c5fd;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  margin-bottom: 6px;
+}
+
+.hero-date-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 8px 14px;
+  color: #cbd5e1;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .dashboard-hero-banner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* ── Quick Options Grid (Module Dashboards) ────────────────── */
+.workspace-options {
+  background: var(--surface);
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  margin-bottom: 24px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.workspace-options-head {
+  padding: 16px 22px;
+  border-bottom: 1px solid #f1f5f9;
+  background: #ffffff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.workspace-options-head h3 {
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--navy);
+  margin: 0;
+}
+
+.option-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  padding: 18px 22px;
+  background: var(--surface);
+}
+
+@media (max-width: 1024px) {
+  .option-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 650px) {
+  .option-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.option-card {
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+  color: var(--ink);
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.02);
+}
+
+.option-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 6px 18px -4px rgba(15, 23, 42, 0.08);
+  transform: translateY(-2px);
+  background: #f8fafc;
+}
+
+.option-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: var(--royal);
+  font-size: 18px;
+  flex: 0 0 auto;
+  transition: transform 0.18s ease;
+}
+
+.option-card:hover .option-icon {
+  transform: scale(1.05);
+}
+
+.option-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.option-icon.blue { background: #eff6ff; color: #2563eb; }
+.option-icon.green { background: #ecfdf5; color: #059669; }
+.option-icon.amber { background: #fffbeb; color: #d97706; }
+.option-icon.purple { background: #faf5ff; color: #7c3aed; }
+.option-icon.slate { background: #f1f5f9; color: #475569; }
+
+.option-card:nth-child(2) .option-icon { background: #ecfdf5; color: #059669; }
+.option-card:nth-child(3) .option-icon { background: #fffbeb; color: #d97706; }
+.option-card:nth-child(4) .option-icon { background: #faf5ff; color: #7c3aed; }
+.option-card:nth-child(5) .option-icon { background: #f1f5f9; color: #475569; }
+.option-card:nth-child(6) .option-icon { background: #eff6ff; color: #2563eb; }
+
+.option-card span:nth-child(2) {
+  min-width: 0;
+  flex: 1;
+}
+
+.option-card strong {
+  display: block;
+  color: var(--navy);
+  font-size: 13.5px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.option-card small {
+  display: block;
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.option-card b {
+  color: #94a3b8;
+  font-size: 16px;
+  font-weight: 500;
+  transition: transform 0.18s, color 0.18s;
+}
+
+.option-card:hover b {
+  transform: translateX(4px);
+  color: var(--royal);
+}
+
+/* ── Fiori Launchpad Container & Sections ──────────────────── */
+.fiori-page-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.fiori-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.fiori-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.fiori-section-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fiori-section-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+  font-family: var(--font-display);
+  margin: 0;
+}
+
+.fiori-icon-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+}
+
+.fiori-icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.fiori-icon-btn:hover {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+/* ── Fiori Tiles Grid (Apps) ───────────────────────────────── */
+.fiori-tiles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.fiori-tile {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+
+.fiori-tile:hover {
+  transform: translateY(-2px);
+  border-color: #cbd5e1;
+  box-shadow: 0 6px 16px -2px rgba(15, 23, 42, 0.08);
+}
+
+.fiori-tile-icon-badge {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.fiori-tile-icon-badge svg {
+  width: 20px;
+  height: 20px;
+}
+
+.fiori-tile-icon-badge.magenta { background: #fdf2f8; color: #d8246f; }
+.fiori-tile-icon-badge.green   { background: #f0fdf4; color: #16a34a; }
+.fiori-tile-icon-badge.teal    { background: #f0fdfa; color: #0d9488; }
+.fiori-tile-icon-badge.amber   { background: #fffbeb; color: #d97706; }
+.fiori-tile-icon-badge.forest  { background: #f0fdf4; color: #15803d; }
+.fiori-tile-icon-badge.blue    { background: #eff6ff; color: #2563eb; }
+.fiori-tile-icon-badge.royal   { background: #f0f9ff; color: #0284c7; }
+.fiori-tile-icon-badge.coral   { background: #fff1f2; color: #e11d48; }
+.fiori-tile-icon-badge.purple  { background: #faf5ff; color: #9333ea; }
+.fiori-tile-icon-badge.slate   { background: #f8fafc; color: #475569; }
+
+.fiori-tile-text {
+  min-width: 0;
+}
+
+.fiori-tile-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fiori-tile-sub {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Suite Business Modules Grid & Cards ───────────────────── */
+.fiori-apps-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 1180px) {
+  .fiori-apps-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .fiori-apps-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fiori-app-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 18px 20px;
+  display: grid;
+  grid-template-rows: 36px 1fr 56px;
+  align-items: start;
+  gap: 14px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
+}
+
+.fiori-app-card:hover {
+  transform: translateY(-3px);
+  border-color: #93c5fd;
+  box-shadow: 0 10px 25px -4px rgba(0, 112, 242, 0.12), 0 4px 6px -2px rgba(15, 23, 42, 0.04);
+}
+
+.fiori-app-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.fiori-app-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  letter-spacing: 0.02em;
+}
+
+.fiori-app-badge.blue   { background: #eff6ff; color: #1d4ed8; }
+.fiori-app-badge.amber  { background: #fffbeb; color: #b45309; }
+.fiori-app-badge.royal  { background: #f0f9ff; color: #0369a1; }
+.fiori-app-badge.purple { background: #faf5ff; color: #7e22ce; }
+
+.fiori-app-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 6px 0;
+  letter-spacing: -0.01em;
+}
+
+.fiori-app-desc {
+  font-size: 12.5px;
+  color: #64748b;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.fiori-app-card-foot {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-top: 12px;
+  border-top: 1px solid #f1f5f9;
+  gap: 8px;
+  height: 100%;
+}
+
+.fiori-app-submodules {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 4px;
+}
+
+.fiori-app-tag {
+  font-size: 10.5px;
+  color: #475569;
+  background: #f1f5f9;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-weight: 500;
+}
+
+.fiori-app-arrow {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0070f2;
+  white-space: nowrap;
+  align-self: center;
+  transition: transform 0.15s ease;
+}
+
+.fiori-app-card:hover .fiori-app-arrow {
+  transform: translateX(3px);
+}
+
+/* ── Fiori Insights Grid (Analytical Cards & Micro Charts) ─── */
+.fiori-insights-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 16px;
+}
+
+.fiori-insight-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.fiori-insight-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+}
+
+.fiori-card-head {
+  margin-bottom: 6px;
+}
+
+.fiori-card-subtitle {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.fiori-card-kpi-sub {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.fiori-card-metric-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 8px 0 12px 0;
+}
+
+.fiori-card-metric-val {
+  font-size: 26px;
+  font-weight: 800;
+  color: #0f172a;
+  font-family: var(--font-display);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.fiori-unit {
+  font-size: 16px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.fiori-delta {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.fiori-delta.positive {
+  color: #15803d;
+  background: #f0fdf4;
+}
+
+.fiori-delta.negative {
+  color: #b91c1c;
+  background: #fef2f2;
+}
+
+.fiori-card-metric-bench {
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+  color: #64748b;
+  text-align: right;
+  line-height: 1.3;
+}
+
+.fiori-chart-container {
+  width: 100%;
+  height: 130px;
+  margin: 6px 0;
+}
+
+.fiori-svg-chart {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.fiori-chart-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
+.fiori-card-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  color: #64748b;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.legend-dot.blue    { background: #0070f2; }
+.legend-dot.orange  { background: #e9730c; }
+.legend-dot.green   { background: #107e3e; }
+.legend-dot.magenta { background: #d8246f; }
+
+.legend-line {
+  width: 12px;
+  height: 2px;
+  background: #334155;
+  display: inline-block;
+}
+
+/* Donut Chart */
+.fiori-donut-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 130px;
+}
+
+.fiori-donut-svg {
+  width: 130px;
+  height: 130px;
+}
+
+.fiori-donut-legend-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  font-size: 11px;
+  color: #64748b;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid #f1f5f9;
+}
+
+@media (max-width: 768px) {
+  .fiori-tiles-grid {
+    grid-template-columns: 1fr;
+  }
+  .fiori-insights-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

@@ -1,5 +1,39 @@
-import sql from 'mssql/msnodesqlv8.js';
+import crypto from 'node:crypto';
 import { generateNextEmployeeCode, getHrSettings } from './catalogs.repo.js';
+import { formatCedula } from '../validators.js';
+import { createPasswordHash } from '../../../core/auth.js';
+import { badRequest, notFound } from '../../../core/http.js';
+
+/**
+ * Resolves a role ID by name or Spanish alias, strictly preventing privilege escalation to Super Admin.
+ */
+async function resolveAssignableRoleId(client, roleName = 'Employee') {
+  const requested = String(roleName || 'Employee').trim();
+  const roleRes = await client.request()
+    .input('rName', requested)
+    .query(`
+      SELECT Id FROM Roles
+      WHERE IsActive = TRUE
+        AND Name <> 'Super Admin'
+        AND (
+          Name = @rName
+          OR (Name = 'Employee' AND @rName IN ('Empleado', 'Employee'))
+          OR (Name = 'Company Admin' AND @rName IN ('Administrador', 'Administrador de Empresa', 'Company Admin'))
+        )
+      LIMIT 1;
+    `);
+  return roleRes.recordset[0]?.Id || 4;
+}
+
+async function assignUserRole(client, userId, roleId) {
+  await client.request()
+    .input('uid', userId)
+    .input('rid', roleId)
+    .query(`
+      DELETE FROM UserRoles WHERE UserId = @uid;
+      INSERT INTO UserRoles (UserId, RoleId) VALUES (@uid, @rid);
+    `);
+}
 
 export async function listEmployees(pool, {
   companyId,
@@ -18,44 +52,37 @@ export async function listEmployees(pool, {
   positionId = null,
   contractTypeId = null
 }) {
-  const offset = (Math.max(1, page) - 1) * pageSize;
+  const safePage = Math.max(1, Number(page) || 1);
+  const safePageSize = Math.min(5000, Math.max(1, Number(pageSize) || 20));
+  const offset = (safePage - 1) * safePageSize;
 
   let where = `WHERE e.CompanyId = @companyId`;
 
   if (!isGlobal && !isCompanyAdmin && !canViewAll) {
-    where += ` AND e.Id IN (SELECT EmployeeId FROM dbo.fn_HrVisibleEmployees(@userId, 0, 0))`;
+    where += ` AND e.Id IN (SELECT EmployeeId FROM fn_HrVisibleEmployees(@userId, FALSE, FALSE))`;
   }
 
-  if (status) {
-    where += ` AND e.Status = @status`;
-  }
-  if (departmentId) {
-    where += ` AND e.DepartmentId = @departmentId`;
-  }
-  if (branchId) {
-    where += ` AND e.BranchId = @branchId`;
-  }
-  if (positionId) {
-    where += ` AND e.PositionId = @positionId`;
-  }
-  if (contractTypeId) {
-    where += ` AND e.ContractTypeId = @contractTypeId`;
-  }
+  if (status) where += ` AND e.Status = @status`;
+  if (departmentId) where += ` AND e.DepartmentId = @departmentId`;
+  if (branchId) where += ` AND e.BranchId = @branchId`;
+  if (positionId) where += ` AND e.PositionId = @positionId`;
+  if (contractTypeId) where += ` AND e.ContractTypeId = @contractTypeId`;
   if (search) {
     where += ` AND (
-      e.FirstName LIKE @search OR
-      e.LastName LIKE @search OR
-      e.EmployeeCode LIKE @search OR
-      e.Email LIKE @search OR
-      e.DocumentNumber LIKE @search
+      e.FirstName ILIKE @search OR
+      e.LastName ILIKE @search OR
+      CONCAT(e.FirstName, ' ', e.LastName) ILIKE @search OR
+      e.EmployeeCode ILIKE @search OR
+      e.Email ILIKE @search OR
+      e.DocumentNumber ILIKE @search
     )`;
   }
 
-  const countQuery = `SELECT COUNT(*) AS total FROM dbo.HrEmployees e ${where};`;
+  const countQuery = `SELECT COUNT(*) AS total FROM HrEmployees e ${where};`;
 
   const dataQuery = `
     SELECT e.Id, e.CompanyId, e.BranchId, e.EmployeeCode, e.FirstName, e.LastName,
-           CONCAT(e.FirstName, N' ', e.LastName) AS FullName,
+           CONCAT(e.FirstName, ' ', e.LastName) AS FullName,
            e.DocumentType, e.DocumentNumber, e.Email, e.Phone,
            e.HireDate, e.Status, e.DepartmentId, e.PositionId, e.SupervisorEmployeeId,
            e.ContractTypeId, e.WorkModalityId, e.BaseSalary, e.SalaryCurrency, e.PayFrequency,
@@ -63,33 +90,43 @@ export async function listEmployees(pool, {
            b.Name AS BranchName,
            d.Name AS DepartmentName,
            p.Title AS PositionTitle,
-           CONCAT(s.FirstName, N' ', s.LastName) AS SupervisorName,
+           CONCAT(s.FirstName, ' ', s.LastName) AS SupervisorName,
            c.Name AS ContractTypeName,
-           w.Name AS WorkModalityName
-    FROM dbo.HrEmployees e
-    LEFT JOIN dbo.Branches b ON b.Id = e.BranchId
-    LEFT JOIN dbo.HrDepartments d ON d.Id = e.DepartmentId
-    LEFT JOIN dbo.HrPositions p ON p.Id = e.PositionId
-    LEFT JOIN dbo.HrEmployees s ON s.Id = e.SupervisorEmployeeId
-    LEFT JOIN dbo.HrCatalogItems c ON c.Id = e.ContractTypeId
-    LEFT JOIN dbo.HrCatalogItems w ON w.Id = e.WorkModalityId
+           w.Name AS WorkModalityName,
+           uo.Email AS UserAccountEmail,
+           CASE WHEN uo.IsActive = TRUE THEN 'Activa' WHEN uo.UserId IS NOT NULL THEN 'Inactiva' ELSE NULL END AS AccountStatus,
+           COALESCE(ur_role.Name, 'Sin cuenta') AS UserRole
+    FROM HrEmployees e
+    LEFT JOIN Branches b ON b.Id = e.BranchId
+    LEFT JOIN HrDepartments d ON d.Id = e.DepartmentId
+    LEFT JOIN HrPositions p ON p.Id = e.PositionId
+    LEFT JOIN HrEmployees s ON s.Id = e.SupervisorEmployeeId
+    LEFT JOIN HrCatalogItems c ON c.Id = e.ContractTypeId
+    LEFT JOIN HrCatalogItems w ON w.Id = e.WorkModalityId
+    LEFT JOIN UserOrganizations uo ON uo.UserId = e.UserId
+    LEFT JOIN LATERAL (
+      SELECT r.Name FROM UserRoles ur
+      INNER JOIN Roles r ON r.Id = ur.RoleId
+      WHERE ur.UserId = e.UserId ORDER BY r.Name
+      LIMIT 1
+    ) ur_role ON TRUE
     ${where}
     ORDER BY e.LastName ASC, e.FirstName ASC
-    OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY;
+    LIMIT @pageSize OFFSET @offset;
   `;
 
   const req = pool.request()
-    .input('companyId', sql.Int, companyId)
-    .input('userId', sql.NVarChar(450), userId)
-    .input('offset', sql.Int, offset)
-    .input('pageSize', sql.Int, pageSize);
+    .input('companyId', companyId)
+    .input('userId', userId)
+    .input('offset', offset)
+    .input('pageSize', safePageSize);
 
-  if (status) req.input('status', sql.NVarChar(20), status);
-  if (departmentId) req.input('departmentId', sql.Int, Number(departmentId));
-  if (branchId) req.input('branchId', sql.Int, Number(branchId));
-  if (positionId) req.input('positionId', sql.Int, Number(positionId));
-  if (contractTypeId) req.input('contractTypeId', sql.Int, Number(contractTypeId));
-  if (search) req.input('search', sql.NVarChar(100), `%${search.trim()}%`);
+  if (status) req.input('status', status);
+  if (departmentId) req.input('departmentId', Number(departmentId));
+  if (branchId) req.input('branchId', Number(branchId));
+  if (positionId) req.input('positionId', Number(positionId));
+  if (contractTypeId) req.input('contractTypeId', Number(contractTypeId));
+  if (search) req.input('search', `%${search.trim()}%`);
 
   const [countRes, dataRes] = await Promise.all([
     req.query(countQuery),
@@ -97,61 +134,70 @@ export async function listEmployees(pool, {
   ]);
 
   const total = countRes.recordset[0].total;
-
-  // Mask sensitive and salary fields if not authorized
   const data = dataRes.recordset.map(emp => sanitizeEmployee(emp, canViewSalary, canViewSensitive));
 
-  return { total, data, page, pageSize };
+  return { total, data, page: safePage, pageSize: safePageSize };
 }
 
 export async function getEmployeeById(pool, employeeId, {
   canViewSalary = false,
   canViewSensitive = false
 } = {}) {
-  const result = await pool.request()
-    .input('id', sql.Int, Number(employeeId))
-    .query(`
-      SELECT e.Id, e.CompanyId, e.BranchId, e.EmployeeCode, e.FirstName, e.LastName,
-             CONCAT(e.FirstName, N' ', e.LastName) AS FullName,
-             e.DocumentType, e.DocumentNumber, e.BirthDate, e.Sex, e.Nationality,
-             e.MaritalStatus, e.Phone, e.Email, e.Address, e.PhotoFileId,
-             e.DepartmentId, e.PositionId, e.SupervisorEmployeeId, e.HireDate,
-             e.ContractTypeId, e.WorkModalityId, e.BaseSalary, e.SalaryCurrency, e.PayFrequency,
-             e.Status, e.StatusChangedAt, e.TerminationDate, e.TerminationReasonId, e.TerminationNotes,
-             e.UserId, e.CreatedAt, e.UpdatedAt,
-             b.Name AS BranchName,
-             d.Name AS DepartmentName,
-             p.Title AS PositionTitle,
-             p.HierarchyLevel,
-             CONCAT(s.FirstName, N' ', s.LastName) AS SupervisorName,
-             c.Name AS ContractTypeName,
-             w.Name AS WorkModalityName,
-             tr.Name AS TerminationReasonName,
-             u.Email AS UserAccountEmail
-      FROM dbo.HrEmployees e
-      LEFT JOIN dbo.Branches b ON b.Id = e.BranchId
-      LEFT JOIN dbo.HrDepartments d ON d.Id = e.DepartmentId
-      LEFT JOIN dbo.HrPositions p ON p.Id = e.PositionId
-      LEFT JOIN dbo.HrEmployees s ON s.Id = e.SupervisorEmployeeId
-      LEFT JOIN dbo.HrCatalogItems c ON c.Id = e.ContractTypeId
-      LEFT JOIN dbo.HrCatalogItems w ON w.Id = e.WorkModalityId
-      LEFT JOIN dbo.HrCatalogItems tr ON tr.Id = e.TerminationReasonId
-      LEFT JOIN dbo.UserOrganizations u ON u.UserId = e.UserId
-      WHERE e.Id = @id;
-    `);
+  const empId = Number(employeeId);
+  if (!Number.isInteger(empId) || empId <= 0) return null;
+
+  const [result, contacts] = await Promise.all([
+    pool.request()
+      .input('id', empId)
+      .query(`
+        SELECT e.Id, e.CompanyId, e.BranchId, e.EmployeeCode, e.FirstName, e.LastName,
+               CONCAT(e.FirstName, ' ', e.LastName) AS FullName,
+               e.DocumentType, e.DocumentNumber, e.BirthDate, e.Sex, e.Nationality,
+               e.MaritalStatus, e.Phone, e.Email, e.Address, e.PhotoFileId,
+               e.DepartmentId, e.PositionId, e.SupervisorEmployeeId, e.HireDate,
+               e.ContractTypeId, e.WorkModalityId, e.BaseSalary, e.SalaryCurrency, e.PayFrequency,
+               e.Status, e.StatusChangedAt, e.TerminationDate, e.TerminationReasonId, e.TerminationNotes,
+               e.UserId, e.CreatedAt, e.UpdatedAt,
+               b.Name AS BranchName,
+               d.Name AS DepartmentName,
+               p.Title AS PositionTitle,
+               p.HierarchyLevel,
+               CONCAT(s.FirstName, ' ', s.LastName) AS SupervisorName,
+               c.Name AS ContractTypeName,
+               w.Name AS WorkModalityName,
+               tr.Name AS TerminationReasonName,
+               u.Email AS UserAccountEmail,
+               CASE WHEN u.IsActive = TRUE THEN 'Activa' WHEN u.UserId IS NOT NULL THEN 'Inactiva' ELSE NULL END AS AccountStatus,
+               COALESCE(ur_role.Name, 'Empleado') AS UserRole
+        FROM HrEmployees e
+        LEFT JOIN Branches b ON b.Id = e.BranchId
+        LEFT JOIN HrDepartments d ON d.Id = e.DepartmentId
+        LEFT JOIN HrPositions p ON p.Id = e.PositionId
+        LEFT JOIN HrEmployees s ON s.Id = e.SupervisorEmployeeId
+        LEFT JOIN HrCatalogItems c ON c.Id = e.ContractTypeId
+        LEFT JOIN HrCatalogItems w ON w.Id = e.WorkModalityId
+        LEFT JOIN HrCatalogItems tr ON tr.Id = e.TerminationReasonId
+        LEFT JOIN UserOrganizations u ON u.UserId = e.UserId
+        LEFT JOIN LATERAL (
+          SELECT r.Name FROM UserRoles ur
+          INNER JOIN Roles r ON r.Id = ur.RoleId
+          WHERE ur.UserId = e.UserId ORDER BY r.Name
+          LIMIT 1
+        ) ur_role ON TRUE
+        WHERE e.Id = @id;
+      `),
+    pool.request()
+      .input('employeeId', empId)
+      .query(`
+        SELECT Id, FullName, Relationship, Phone, AltPhone, IsPrimary
+        FROM HrEmergencyContacts
+        WHERE EmployeeId = @employeeId
+        ORDER BY IsPrimary DESC, FullName ASC;
+      `)
+  ]);
 
   const employee = result.recordset[0];
   if (!employee) return null;
-
-  // Emergency contacts
-  const contacts = await pool.request()
-    .input('employeeId', sql.Int, Number(employeeId))
-    .query(`
-      SELECT Id, FullName, Relationship, Phone, AltPhone, IsPrimary
-      FROM dbo.HrEmergencyContacts
-      WHERE EmployeeId = @employeeId
-      ORDER BY IsPrimary DESC, FullName ASC;
-    `);
 
   employee.emergencyContacts = contacts.recordset;
 
@@ -210,190 +256,228 @@ function maskPhone(val) {
 
 /**
  * Creates an employee with generated or provided unique code and initial hire movement.
+ * Supports atomic linking or creation of Kinetix user account in a single transaction.
  */
 export async function createEmployee(pool, data, userId) {
-  const transaction = new sql.Transaction(pool);
-  await transaction.begin();
-
-  try {
+  return pool.withTransaction(async transaction => {
     let employeeCode = data.employeeCode?.trim().toUpperCase();
 
     if (employeeCode) {
-      // Check if manual code allowed
       const settings = await getHrSettings(pool, data.companyId);
       if (!settings.AllowManualEmployeeCode) {
-        // If not allowed, generate automated code
         employeeCode = await generateNextEmployeeCode(transaction, data.companyId);
       }
     } else {
       employeeCode = await generateNextEmployeeCode(transaction, data.companyId);
     }
 
-    const insertReq = new sql.Request(transaction);
-    const result = await insertReq
-      .input('companyId', sql.Int, data.companyId)
-      .input('branchId', sql.Int, data.branchId ? Number(data.branchId) : null)
-      .input('code', sql.NVarChar(30), employeeCode)
-      .input('firstName', sql.NVarChar(100), data.firstName.trim())
-      .input('lastName', sql.NVarChar(100), data.lastName.trim())
-      .input('docType', sql.NVarChar(20), data.documentType || 'Cedula')
-      .input('docNum', sql.NVarChar(30), data.documentNumber.trim())
-      .input('birthDate', sql.Date, data.birthDate ? new Date(data.birthDate) : null)
-      .input('sex', sql.Char(1), data.sex || null)
-      .input('nationality', sql.NVarChar(80), data.nationality?.trim() || null)
-      .input('maritalStatus', sql.NVarChar(20), data.maritalStatus || null)
-      .input('phone', sql.NVarChar(30), data.phone?.trim() || null)
-      .input('email', sql.NVarChar(254), data.email?.trim() || null)
-      .input('address', sql.NVarChar(400), data.address?.trim() || null)
-      .input('departmentId', sql.Int, data.departmentId ? Number(data.departmentId) : null)
-      .input('positionId', sql.Int, data.positionId ? Number(data.positionId) : null)
-      .input('supervisorId', sql.Int, data.supervisorEmployeeId ? Number(data.supervisorEmployeeId) : null)
-      .input('hireDate', sql.Date, new Date(data.hireDate))
-      .input('contractTypeId', sql.Int, data.contractTypeId ? Number(data.contractTypeId) : null)
-      .input('workModalityId', sql.Int, data.workModalityId ? Number(data.workModalityId) : null)
-      .input('baseSalary', sql.Decimal(18, 2), data.baseSalary != null ? Number(data.baseSalary) : 0)
-      .input('salaryCurrency', sql.Char(3), data.salaryCurrency || 'DOP')
-      .input('payFrequency', sql.NVarChar(20), data.payFrequency || 'Mensual')
-      .input('userId', sql.NVarChar(450), data.userId || null)
-      .input('createdBy', sql.NVarChar(450), userId || null)
-      .query(`
-        INSERT INTO dbo.HrEmployees (
-          CompanyId, BranchId, EmployeeCode, FirstName, LastName,
-          DocumentType, DocumentNumber, BirthDate, Sex, Nationality,
-          MaritalStatus, Phone, Email, Address, DepartmentId, PositionId,
-          SupervisorEmployeeId, HireDate, ContractTypeId, WorkModalityId,
-          BaseSalary, SalaryCurrency, PayFrequency, UserId, CreatedBy
-        )
-        OUTPUT INSERTED.Id, INSERTED.EmployeeCode, INSERTED.FirstName, INSERTED.LastName, INSERTED.CompanyId
-        VALUES (
-          @companyId, @branchId, @code, @firstName, @lastName,
-          @docType, @docNum, @birthDate, @sex, @nationality,
-          @maritalStatus, @phone, @email, @address, @departmentId, @positionId,
-          @supervisorId, @hireDate, @contractTypeId, @workModalityId,
-          @baseSalary, @salaryCurrency, @payFrequency, @userId, @createdBy
-        );
-      `);
+    let assignedUserId = data.userId || null;
 
-    const created = result.recordset[0];
+    if (data.existingUserId) {
+      assignedUserId = data.existingUserId;
+      if (data.userRole) {
+        const roleId = await resolveAssignableRoleId(transaction, data.userRole);
+        await assignUserRole(transaction, assignedUserId, roleId);
+      }
+    } else if (data.createUserAccount === true || data.createUserAccount === 'true') {
+      const email = data.email?.trim();
+      if (!email) {
+        throw badRequest('Se requiere un correo electrónico para crear la cuenta de acceso.');
+      }
 
-    // Initial hire movement
-    await new sql.Request(transaction)
-      .input('employeeId', sql.Int, created.Id)
-      .input('companyId', sql.Int, data.companyId)
-      .input('effectiveDate', sql.Date, new Date(data.hireDate))
-      .input('toBranchId', sql.Int, data.branchId ? Number(data.branchId) : null)
-      .input('toDeptId', sql.Int, data.departmentId ? Number(data.departmentId) : null)
-      .input('toPositionId', sql.Int, data.positionId ? Number(data.positionId) : null)
-      .input('toSupervisorId', sql.Int, data.supervisorEmployeeId ? Number(data.supervisorEmployeeId) : null)
-      .input('toSalary', sql.Decimal(18, 2), data.baseSalary != null ? Number(data.baseSalary) : 0)
-      .input('toStatus', sql.NVarChar(20), 'Activo')
-      .input('reason', sql.NVarChar(1000), 'Ingreso inicial a la organización')
-      .input('createdBy', sql.NVarChar(450), userId || null)
-      .query(`
-        INSERT INTO dbo.HrEmployeeMovements (
-          EmployeeId, CompanyId, MovementType, EffectiveDate,
-          ToBranchId, ToDepartmentId, ToPositionId, ToSupervisorId,
-          ToSalary, ToStatus, Reason, CreatedBy
-        ) VALUES (
-          @employeeId, @companyId, N'Ingreso', @effectiveDate,
-          @toBranchId, @toDeptId, @toPositionId, @toSupervisorId,
-          @toSalary, @toStatus, @reason, @createdBy
-        );
-      `);
+      const existingUserRes = await transaction.request()
+        .input('email', email)
+        .query('SELECT UserId FROM UserOrganizations WHERE LOWER(Email) = LOWER(@email) LIMIT 1;');
+      const existingUser = existingUserRes.recordset[0];
+      const roleId = await resolveAssignableRoleId(transaction, data.userRole || 'Employee');
 
-    // Emergency contacts if provided
-    if (Array.isArray(data.emergencyContacts) && data.emergencyContacts.length > 0) {
-      for (const contact of data.emergencyContacts) {
-        if (!contact.fullName?.trim() || !contact.phone?.trim()) continue;
-        await new sql.Request(transaction)
-          .input('empId', sql.Int, created.Id)
-          .input('name', sql.NVarChar(150), contact.fullName.trim())
-          .input('rel', sql.NVarChar(60), contact.relationship?.trim() || null)
-          .input('phone', sql.NVarChar(30), contact.phone.trim())
-          .input('altPhone', sql.NVarChar(30), contact.altPhone?.trim() || null)
-          .input('isPrimary', sql.Bit, !!contact.isPrimary)
-          .query(`
-            INSERT INTO dbo.HrEmergencyContacts (EmployeeId, FullName, Relationship, Phone, AltPhone, IsPrimary)
-            VALUES (@empId, @name, @rel, @phone, @altPhone, @isPrimary);
-          `);
+      if (existingUser) {
+        assignedUserId = existingUser.UserId;
+        await assignUserRole(transaction, assignedUserId, roleId);
+      } else {
+        assignedUserId = crypto.randomUUID();
+        const rawPassword = data.userPassword?.trim() || crypto.randomBytes(16).toString('hex');
+        const passHash = createPasswordHash(rawPassword);
+
+        await transaction.insert('UserOrganizations', {
+          UserId: assignedUserId,
+          CompanyId: data.companyId,
+          BranchId: data.branchId ? Number(data.branchId) : null,
+          FirstName: data.firstName.trim(),
+          LastName: data.lastName.trim(),
+          Email: email,
+          PasswordHash: passHash,
+          Phone: data.phone?.trim() || null,
+          IsActive: true
+        });
+
+        await transaction.insert('UserRoles', {
+          UserId: assignedUserId,
+          RoleId: roleId
+        }, { returning: false });
       }
     }
 
-    await transaction.commit();
+    const created = await transaction.insert('HrEmployees', {
+      CompanyId: data.companyId,
+      BranchId: data.branchId ? Number(data.branchId) : null,
+      EmployeeCode: employeeCode,
+      FirstName: data.firstName.trim(),
+      LastName: data.lastName.trim(),
+      DocumentType: data.documentType || 'Cedula',
+      DocumentNumber: (data.documentType === 'Cedula' || !data.documentType) ? formatCedula(data.documentNumber) : data.documentNumber.trim(),
+      BirthDate: data.birthDate ? new Date(data.birthDate) : null,
+      Sex: data.sex || null,
+      Nationality: data.nationality?.trim() || null,
+      MaritalStatus: data.maritalStatus || null,
+      Phone: data.phone?.trim() || null,
+      Email: data.email?.trim() || null,
+      Address: data.address?.trim() || null,
+      DepartmentId: data.departmentId ? Number(data.departmentId) : null,
+      PositionId: data.positionId ? Number(data.positionId) : null,
+      SupervisorEmployeeId: data.supervisorEmployeeId ? Number(data.supervisorEmployeeId) : null,
+      HireDate: new Date(data.hireDate),
+      ContractTypeId: data.contractTypeId ? Number(data.contractTypeId) : null,
+      WorkModalityId: data.workModalityId ? Number(data.workModalityId) : null,
+      BaseSalary: data.baseSalary != null ? Number(data.baseSalary) : 0,
+      SalaryCurrency: data.salaryCurrency || 'DOP',
+      PayFrequency: data.payFrequency || 'Mensual',
+      UserId: assignedUserId,
+      CreatedBy: userId || null
+    }, { returning: 'Id, EmployeeCode, FirstName, LastName, CompanyId, UserId' });
+
+    await transaction.insert('HrEmployeeMovements', {
+      EmployeeId: created.Id,
+      CompanyId: data.companyId,
+      MovementType: 'Ingreso',
+      EffectiveDate: new Date(data.hireDate),
+      ToBranchId: data.branchId ? Number(data.branchId) : null,
+      ToDepartmentId: data.departmentId ? Number(data.departmentId) : null,
+      ToPositionId: data.positionId ? Number(data.positionId) : null,
+      ToSupervisorId: data.supervisorEmployeeId ? Number(data.supervisorEmployeeId) : null,
+      ToSalary: data.baseSalary != null ? Number(data.baseSalary) : 0,
+      ToStatus: 'Activo',
+      Reason: 'Ingreso inicial a la organización',
+      CreatedBy: userId || null
+    });
+
+    if (Array.isArray(data.emergencyContacts) && data.emergencyContacts.length > 0) {
+      for (const contact of data.emergencyContacts) {
+        if (!contact.fullName?.trim() || !contact.phone?.trim()) continue;
+        await transaction.insert('HrEmergencyContacts', {
+          EmployeeId: created.Id,
+          FullName: contact.fullName.trim(),
+          Relationship: contact.relationship?.trim() || null,
+          Phone: contact.phone.trim(),
+          AltPhone: contact.altPhone?.trim() || null,
+          IsPrimary: !!contact.isPrimary
+        });
+      }
+    }
+
     return created;
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
+  });
 }
 
+/**
+ * Updates employee personal, contract, and linked user account atomically inside a transaction.
+ */
 export async function updateEmployee(pool, employeeId, data, userId) {
-  const req = pool.request()
-    .input('id', sql.Int, Number(employeeId))
-    .input('firstName', sql.NVarChar(100), data.firstName.trim())
-    .input('lastName', sql.NVarChar(100), data.lastName.trim())
-    .input('docType', sql.NVarChar(20), data.documentType || 'Cedula')
-    .input('docNum', sql.NVarChar(30), data.documentNumber.trim())
-    .input('birthDate', sql.Date, data.birthDate ? new Date(data.birthDate) : null)
-    .input('sex', sql.Char(1), data.sex || null)
-    .input('nationality', sql.NVarChar(80), data.nationality?.trim() || null)
-    .input('maritalStatus', sql.NVarChar(20), data.maritalStatus || null)
-    .input('phone', sql.NVarChar(30), data.phone?.trim() || null)
-    .input('email', sql.NVarChar(254), data.email?.trim() || null)
-    .input('address', sql.NVarChar(400), data.address?.trim() || null)
-    .input('contractTypeId', sql.Int, data.contractTypeId ? Number(data.contractTypeId) : null)
-    .input('workModalityId', sql.Int, data.workModalityId ? Number(data.workModalityId) : null)
-    .input('payFrequency', sql.NVarChar(20), data.payFrequency || 'Mensual')
-    .input('updatedBy', sql.NVarChar(450), userId || null);
+  const empId = Number(employeeId);
+  return pool.withTransaction(async tx => {
+    const current = await tx.findOne('HrEmployees', { Id: empId });
+    if (!current) throw notFound('Empleado no encontrado.');
 
-  const result = await req.query(`
-    UPDATE dbo.HrEmployees
-    SET FirstName = @firstName,
-        LastName = @lastName,
-        DocumentType = @docType,
-        DocumentNumber = @docNum,
-        BirthDate = @birthDate,
-        Sex = @sex,
-        Nationality = @nationality,
-        MaritalStatus = @maritalStatus,
-        Phone = @phone,
-        Email = @email,
-        Address = @address,
-        ContractTypeId = @contractTypeId,
-        WorkModalityId = @workModalityId,
-        PayFrequency = @payFrequency,
-        UpdatedAt = SYSUTCDATETIME(),
-        UpdatedBy = @updatedBy
-    OUTPUT INSERTED.Id, INSERTED.EmployeeCode, INSERTED.FirstName, INSERTED.LastName, INSERTED.CompanyId
-    WHERE Id = @id;
-  `);
+    let assignedUserId = current.UserId;
 
-  return result.recordset[0];
+    if (data.existingUserId) {
+      assignedUserId = data.existingUserId;
+      if (data.userRole) {
+        const roleId = await resolveAssignableRoleId(tx, data.userRole);
+        await assignUserRole(tx, assignedUserId, roleId);
+      }
+    } else if (!current.UserId && (data.createUserAccount === true || data.createUserAccount === 'true')) {
+      const email = (data.email || current.Email)?.trim();
+      if (email) {
+        const existingUserRes = await tx.request()
+          .input('email', email)
+          .query('SELECT UserId FROM UserOrganizations WHERE LOWER(Email) = LOWER(@email) LIMIT 1;');
+        const existingUser = existingUserRes.recordset[0];
+        const roleId = await resolveAssignableRoleId(tx, data.userRole || 'Employee');
+
+        if (existingUser) {
+          assignedUserId = existingUser.UserId;
+          await assignUserRole(tx, assignedUserId, roleId);
+        } else {
+          assignedUserId = crypto.randomUUID();
+          const passHash = createPasswordHash(data.userPassword?.trim() || crypto.randomBytes(16).toString('hex'));
+          await tx.insert('UserOrganizations', {
+            UserId: assignedUserId,
+            CompanyId: current.CompanyId,
+            BranchId: current.BranchId,
+            FirstName: data.firstName?.trim() || current.FirstName,
+            LastName: data.lastName?.trim() || current.LastName,
+            Email: email,
+            PasswordHash: passHash,
+            Phone: data.phone?.trim() || current.Phone,
+            IsActive: true
+          });
+          await tx.insert('UserRoles', { UserId: assignedUserId, RoleId: roleId }, { returning: false });
+        }
+      }
+    } else if (current.UserId) {
+      if (data.userRole) {
+        const roleId = await resolveAssignableRoleId(tx, data.userRole);
+        await assignUserRole(tx, current.UserId, roleId);
+      }
+      if (data.userPassword?.trim() && data.userPassword.trim().length >= 8) {
+        await tx.update('UserOrganizations', { UserId: current.UserId }, {
+          PasswordHash: createPasswordHash(data.userPassword.trim()),
+          UpdatedAt: new Date()
+        });
+      }
+      await tx.update('UserOrganizations', { UserId: current.UserId }, {
+        FirstName: data.firstName ? data.firstName.trim() : current.FirstName,
+        LastName: data.lastName ? data.lastName.trim() : current.LastName,
+        Email: data.email ? data.email.trim() : current.Email,
+        Phone: data.phone ? data.phone.trim() : current.Phone,
+        UpdatedAt: new Date()
+      });
+    }
+
+    return tx.update('HrEmployees', empId, {
+      FirstName: data.firstName ? data.firstName.trim() : current.FirstName,
+      LastName: data.lastName ? data.lastName.trim() : current.LastName,
+      DocumentType: data.documentType || current.DocumentType,
+      DocumentNumber: data.documentNumber ? ((data.documentType === 'Cedula' || !data.documentType) ? formatCedula(data.documentNumber) : data.documentNumber.trim()) : current.DocumentNumber,
+      BirthDate: data.birthDate ? new Date(data.birthDate) : current.BirthDate,
+      Sex: data.sex !== undefined ? data.sex : current.Sex,
+      Nationality: data.nationality !== undefined ? data.nationality.trim() : current.Nationality,
+      MaritalStatus: data.maritalStatus !== undefined ? data.maritalStatus : current.MaritalStatus,
+      Phone: data.phone !== undefined ? data.phone.trim() : current.Phone,
+      Email: data.email !== undefined ? data.email.trim() : current.Email,
+      Address: data.address !== undefined ? data.address.trim() : current.Address,
+      ContractTypeId: data.contractTypeId ? Number(data.contractTypeId) : current.ContractTypeId,
+      WorkModalityId: data.workModalityId ? Number(data.workModalityId) : current.WorkModalityId,
+      PayFrequency: data.payFrequency || current.PayFrequency,
+      UserId: assignedUserId,
+      UpdatedAt: new Date(),
+      UpdatedBy: userId || null
+    }, { returning: 'Id, EmployeeCode, FirstName, LastName, CompanyId, UserId' });
+  });
 }
 
 export async function setEmployeePhoto(pool, employeeId, fileId) {
-  const result = await pool.request()
-    .input('id', sql.Int, Number(employeeId))
-    .input('photoFileId', fileId)
-    .query(`
-      UPDATE dbo.HrEmployees
-      SET PhotoFileId = @photoFileId, UpdatedAt = SYSUTCDATETIME()
-      OUTPUT INSERTED.Id, INSERTED.PhotoFileId
-      WHERE Id = @id;
-    `);
-  return result.recordset[0];
+  return pool.update('HrEmployees', Number(employeeId), {
+    PhotoFileId: fileId,
+    UpdatedAt: new Date()
+  }, { returning: 'Id, PhotoFileId' });
 }
 
 export async function linkUserAccount(pool, employeeId, targetUserId, updatedBy) {
-  const result = await pool.request()
-    .input('id', sql.Int, Number(employeeId))
-    .input('userId', targetUserId || null)
-    .input('updatedBy', updatedBy || null)
-    .query(`
-      UPDATE dbo.HrEmployees
-      SET UserId = @userId, UpdatedAt = SYSUTCDATETIME(), UpdatedBy = @updatedBy
-      OUTPUT INSERTED.Id, INSERTED.UserId
-      WHERE Id = @id;
-    `);
-  return result.recordset[0];
+  return pool.update('HrEmployees', Number(employeeId), {
+    UserId: targetUserId || null,
+    UpdatedAt: new Date(),
+    UpdatedBy: updatedBy || null
+  }, { returning: 'Id, UserId' });
 }

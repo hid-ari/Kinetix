@@ -1,4 +1,5 @@
 import { state } from '../../core/state.js';
+import { loadData } from '../../core/api.js';
 import { toast, escapeHtml } from '../../components/utils.js';
 import { showModal } from '../../components/ui.js';
 import {
@@ -22,6 +23,8 @@ import {
   deletePosition,
   // Fase 2
   loadTodayAttendance,
+  loadHrShifts,
+  saveWorkShift,
   recordCheckIn,
   recordCheckOut,
   loadAttendanceList,
@@ -117,9 +120,154 @@ export function bindHr(renderFn) {
     });
   }
 
-  // Employee form submit
+  // Employee form: Dynamic document type switching and cedula auto-dash formatting
+  const docTypeSelect = document.querySelector('#emp-doc-type');
+  const docNumInput = document.querySelector('#emp-doc-num');
+  const docHelper = document.querySelector('#emp-doc-helper');
+
+  if (docTypeSelect && docNumInput) {
+    const handleDocFormatting = () => {
+      const type = docTypeSelect.value;
+      if (type === 'Cedula') {
+        docNumInput.placeholder = '402-0000001-2';
+        docNumInput.maxLength = 13;
+        docNumInput.setAttribute('inputmode', 'numeric');
+
+        let raw = docNumInput.value.replace(/\D/g, '');
+        if (raw.length > 11) raw = raw.slice(0, 11);
+
+        let formatted = raw;
+        if (raw.length > 3 && raw.length <= 10) {
+          formatted = `${raw.slice(0, 3)}-${raw.slice(3)}`;
+        } else if (raw.length > 10) {
+          formatted = `${raw.slice(0, 3)}-${raw.slice(3, 10)}-${raw.slice(10)}`;
+        }
+
+        if (docNumInput.value !== formatted) {
+          docNumInput.value = formatted;
+        }
+
+        if (docHelper) {
+          if (raw.length === 0) {
+            docHelper.innerHTML = '<span style="color:var(--muted);">Formato automático: 000-0000000-0 (11 dígitos).</span>';
+            docNumInput.setCustomValidity('');
+          } else if (raw.length < 11) {
+            docHelper.innerHTML = `<span style="color:var(--muted);">Faltan ${11 - raw.length} dígito(s) para completar los 11 dígitos requeridos.</span>`;
+            docNumInput.setCustomValidity('La cédula debe contener 11 dígitos.');
+          } else {
+            const weights = [1, 2, 1, 2, 1, 2, 1, 2, 1, 2];
+            let sum = 0;
+            for (let i = 0; i < 10; i++) {
+              let product = parseInt(raw[i], 10) * weights[i];
+              if (product >= 10) product = Math.floor(product / 10) + (product % 10);
+              sum += product;
+            }
+            const expectedVerifier = (10 - (sum % 10)) % 10;
+            const actualVerifier = parseInt(raw[10], 10);
+
+            if (raw === '00000000000') {
+              docHelper.innerHTML = '<span style="color:#ef4444; font-weight:600;">La cédula no puede estar compuesta solo de ceros.</span>';
+              docNumInput.setCustomValidity('Cédula no válida');
+            } else if (expectedVerifier === actualVerifier) {
+              docHelper.innerHTML = '<span style="color:#16a34a; font-weight:600;">Cédula válida (dígito verificador correcto).</span>';
+              docNumInput.setCustomValidity('');
+            } else {
+              docHelper.innerHTML = `<span style="color:#ef4444; font-weight:600;">Dígito verificador incorrecto. El dígito esperado para esta serie es <strong>${expectedVerifier}</strong> (${formatted.slice(0, 12)}${expectedVerifier}).</span>`;
+              docNumInput.setCustomValidity('Dígito verificador incorrecto');
+            }
+          }
+        }
+      } else if (type === 'Pasaporte') {
+        docNumInput.placeholder = 'Ej. RD1234567 (5 a 20 caracteres)';
+        docNumInput.maxLength = 20;
+        docNumInput.removeAttribute('inputmode');
+
+        const val = docNumInput.value.trim();
+        if (docHelper) {
+          if (!val) {
+            docHelper.innerHTML = '<span style="color:var(--muted);">Pasaporte oficial (entre 5 y 20 caracteres alfanuméricos).</span>';
+            docNumInput.setCustomValidity('');
+          } else if (val.length < 5 || val.length > 20) {
+            docHelper.innerHTML = '<span style="color:#ef4444; font-weight:600;">El pasaporte debe tener entre 5 y 20 caracteres.</span>';
+            docNumInput.setCustomValidity('Longitud inválida');
+          } else {
+            docHelper.innerHTML = '<span style="color:#16a34a; font-weight:600;">Formato de pasaporte válido.</span>';
+            docNumInput.setCustomValidity('');
+          }
+        }
+      } else {
+        docNumInput.placeholder = 'Número de documento (3 a 30 caracteres)';
+        docNumInput.maxLength = 30;
+        docNumInput.removeAttribute('inputmode');
+        docNumInput.setCustomValidity('');
+        if (docHelper) {
+          docHelper.innerHTML = '<span style="color:var(--muted);">Documento oficial de identidad (entre 3 y 30 caracteres).</span>';
+        }
+      }
+    };
+
+    docTypeSelect.addEventListener('change', () => {
+      docNumInput.setCustomValidity('');
+      handleDocFormatting();
+    });
+
+    docNumInput.addEventListener('input', handleDocFormatting);
+
+    // Initial evaluation on form render
+    handleDocFormatting();
+  }
+
+  // Employee form submit & unified access toggles
   const empForm = document.querySelector('#hr-employee-form');
   if (empForm) {
+    const accessFields = empForm.querySelector('#emp-access-fields');
+    const accessModeSelect = empForm.querySelector('#emp-access-mode');
+    const passwordField = empForm.querySelector('#emp-password-field');
+    const existingUserField = empForm.querySelector('#emp-existing-user-field');
+    const existingUserSelect = empForm.querySelector('#emp-existing-user-select');
+    const userRoleSelect = empForm.querySelector('#emp-user-role');
+
+    if (accessModeSelect) {
+      accessModeSelect.addEventListener('change', () => {
+        const mode = accessModeSelect.value;
+        if (accessFields) accessFields.style.display = (mode !== 'none') ? 'block' : 'none';
+        if (passwordField) passwordField.style.display = (mode === 'direct') ? 'block' : 'none';
+        if (existingUserField) existingUserField.style.display = (mode === 'link_existing') ? 'block' : 'none';
+      });
+    }
+
+    if (existingUserSelect) {
+      existingUserSelect.addEventListener('change', () => {
+        const selectedUserId = existingUserSelect.value;
+        if (!selectedUserId) return;
+        const u = (state.users || []).find(user => String(user.id) === String(selectedUserId));
+        if (!u) return;
+
+        const firstNameInput = empForm.querySelector('input[name="firstName"]');
+        const lastNameInput = empForm.querySelector('input[name="lastName"]');
+        const emailInput = empForm.querySelector('input[name="email"]');
+        const phoneInput = empForm.querySelector('input[name="phone"]');
+        const branchSelect = empForm.querySelector('select[name="branchId"]');
+
+        const names = (u.name || '').trim().split(/\s+/);
+        const fName = u.firstName || names[0] || '';
+        const lName = u.lastName || names.slice(1).join(' ') || '';
+
+        if (firstNameInput && !firstNameInput.value.trim()) firstNameInput.value = fName;
+        if (lastNameInput && !lastNameInput.value.trim()) lastNameInput.value = lName;
+        if (emailInput && !emailInput.value.trim() && u.email && u.email !== 'Sin email') emailInput.value = u.email;
+        if (phoneInput && !phoneInput.value.trim() && u.phone) phoneInput.value = u.phone;
+        if (branchSelect && !branchSelect.value && (u.branchId || u.branch)) {
+          const matchedBranch = (state.branches || []).find(b => Number(b.id) === Number(u.branchId) || b.name === u.branch);
+          if (matchedBranch) branchSelect.value = String(matchedBranch.id);
+        }
+        if (userRoleSelect && u.role) {
+          userRoleSelect.value = u.role;
+        }
+        toast(`Datos del usuario ${u.name} cargados en el formulario.`);
+      });
+    }
+
     empForm.addEventListener('submit', async event => {
       event.preventDefault();
       const empId = empForm.dataset.employeeId;
@@ -127,15 +275,65 @@ export function bindHr(renderFn) {
       const data = Object.fromEntries(formData);
 
       // Clean empty string IDs to null
-      ['branchId', 'departmentId', 'positionId', 'supervisorEmployeeId', 'contractTypeId', 'workModalityId', 'userId'].forEach(key => {
+      ['branchId', 'departmentId', 'positionId', 'supervisorEmployeeId', 'contractTypeId', 'workModalityId', 'userId', 'existingUserId'].forEach(key => {
         if (!data[key]) data[key] = null;
       });
+
+      // Unified System Access handling
+      const mode = data.accessMode || 'none';
+      const isAccessEnabled = mode !== 'none';
+      data.createUserAccount = isAccessEnabled;
+
+      if (isAccessEnabled) {
+        if (mode === 'invite') {
+          data.sendInvite = true;
+          data.userPassword = null;
+          data.existingUserId = null;
+        } else if (mode === 'link_existing') {
+          if (!data.existingUserId) {
+            toast('Seleccione el usuario existente que desea vincular al expediente.');
+            existingUserSelect?.focus();
+            return;
+          }
+          data.userPassword = null;
+          data.sendInvite = false;
+        } else {
+          data.sendInvite = false;
+          data.existingUserId = null;
+        }
+      } else {
+        data.userRole = null;
+        data.userPassword = null;
+        data.sendInvite = false;
+        data.existingUserId = null;
+        data.userId = null;
+      }
+
+      // Normalize and validate document number before submitting
+      const docType = data.documentType || 'Cedula';
+      if (docType === 'Cedula') {
+        const cleanDigits = (data.documentNumber || '').replace(/\D/g, '');
+        if (cleanDigits.length !== 11) {
+          toast('La cédula dominicana debe contener 11 dígitos.');
+          docNumInput?.focus();
+          return;
+        }
+        data.documentNumber = `${cleanDigits.slice(0, 3)}-${cleanDigits.slice(3, 10)}-${cleanDigits.slice(10)}`;
+      } else if (docType === 'Pasaporte') {
+        data.documentNumber = (data.documentNumber || '').trim();
+        if (data.documentNumber.length < 5 || data.documentNumber.length > 20) {
+          toast('El pasaporte debe tener entre 5 y 20 caracteres.');
+          docNumInput?.focus();
+          return;
+        }
+      }
 
       try {
         if (empId) {
           await updateEmployee(empId, data);
           toast('Datos del empleado actualizados exitosamente.');
           await loadHrEmployeeDetail(empId);
+          state.hr.editMode = false;
           state.view = 'hr-employee-detail';
         } else {
           // Prepare emergency contact if entered
@@ -150,9 +348,10 @@ export function bindHr(renderFn) {
           const created = await saveEmployee(data);
           toast(`Empleado ${created.EmployeeCode} registrado exitosamente.`);
           await loadHrEmployeeDetail(created.Id);
+          state.hr.editMode = false;
           state.view = 'hr-employee-detail';
         }
-        await loadHrEmployees();
+        await Promise.all([loadHrEmployees(), loadData()]);
         renderFn();
       } catch (err) {
         toast(err.message);
@@ -203,13 +402,67 @@ export function bindHr(renderFn) {
             loadHrEmployeeDetail(id),
             loadHrDepartments(),
             loadHrPositions(),
-            loadHrCatalogs()
+            loadHrCatalogs(),
+            loadData()
           ]);
           state.view = 'hr-employee-form';
           renderFn();
         } catch (err) {
           toast(err.message);
         }
+      });
+    }
+
+    if (action === 'open-link-user-modal') {
+      btn.addEventListener('click', async () => {
+        const empId = btn.dataset.id;
+        const emp = state.hr.currentEmployee;
+        try { await loadData(); } catch (_) {}
+
+        const availableUsers = (state.users || []).filter(u =>
+          !u.employeeId || (emp?.UserId && String(u.id) === String(emp.UserId))
+        );
+
+        const optionsHtml = availableUsers.map(u => `
+          <option value="${escapeHtml(u.id)}" ${String(emp?.UserId || '') === String(u.id) ? 'selected' : ''}>
+            ${escapeHtml(u.name)} (${escapeHtml(u.email)})${u.role ? ` · ${escapeHtml(u.role)}` : ''}
+          </option>
+        `).join('');
+
+        showModal(
+          'Vincular cuenta de usuario',
+          `
+            <div class="form-grid">
+              <div class="field full">
+                <label>Empleado</label>
+                <input disabled value="${escapeHtml(emp ? `${emp.EmployeeCode} · ${emp.FirstName} ${emp.LastName}` : `#${empId}`)}">
+              </div>
+              <div class="field full">
+                <label>Cuenta de Usuario (Administración)</label>
+                <select id="modal-emp-link-user-select">
+                  <option value="">— Sin usuario vinculado (solo expediente en RRHH) —</option>
+                  ${optionsHtml}
+                </select>
+                <span class="helper">Solo se muestran usuarios que no tienen otro expediente de empleado asignado.</span>
+              </div>
+            </div>
+          `,
+          'Guardar vinculación',
+          async modal => {
+            const selectedUserId = modal.querySelector('#modal-emp-link-user-select')?.value || null;
+            const res = await fetch(`/api/hr/employees/${empId}/link-user`, {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: selectedUserId })
+            });
+            const payload = await res.json();
+            if (!res.ok) throw new Error(payload.message || 'No fue posible actualizar la vinculación.');
+            await Promise.all([loadHrEmployeeDetail(empId), loadHrEmployees(), loadData()]);
+            toast(selectedUserId ? 'Cuenta de usuario vinculada al expediente.' : 'Cuenta de usuario desvinculada del expediente.');
+            renderFn();
+          }
+        );
       });
     }
 
@@ -365,8 +618,12 @@ export function bindHr(renderFn) {
         const deptId = btn.dataset.id;
         const currentDept = isEdit ? state.hr.departments.find(d => String(d.Id) === String(deptId)) : null;
 
+        const selectedDeptBranchId = currentDept?.BranchId != null
+          ? currentDept.BranchId
+          : (state.branches.length === 1 ? state.branches[0].id : '');
+
         const branchOptions = state.branches.map(b => `
-          <option value="${b.id}" ${currentDept?.BranchId === b.id ? 'selected' : ''}>${escapeHtml(b.name)}</option>
+          <option value="${b.id}" ${String(selectedDeptBranchId) === String(b.id) ? 'selected' : ''}>${escapeHtml(b.name)}</option>
         `).join('');
 
         const parentOptions = state.hr.departments
@@ -390,7 +647,11 @@ export function bindHr(renderFn) {
             </div>
             <div class="field">
               <label>Sucursal</label>
-              <select class="dept-branch"><option value="">Sede Principal</option>${branchOptions}</select>
+              <select class="dept-branch">
+                ${state.branches.length === 0 ? '<option value="">Sin sucursales registradas</option>' : ''}
+                ${state.branches.length > 1 ? '<option value="">Seleccione una sucursal...</option>' : ''}
+                ${branchOptions}
+              </select>
             </div>
             <div class="field">
               <label>Departamento Superior (Padre)</label>
@@ -773,6 +1034,108 @@ export function bindHr(renderFn) {
     });
   });
 
+  // Exportar Asistencia a CSV
+  document.querySelectorAll('[data-action="hr-export-attendance"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const params = new URLSearchParams();
+      if (state.hr.attendanceStartDate) params.set('startDate', state.hr.attendanceStartDate);
+      if (state.hr.attendanceEndDate) params.set('endDate', state.hr.attendanceEndDate);
+      window.open(`/api/hr/attendance/export?${params.toString()}`, '_blank');
+    });
+  });
+
+  // Modal de Creación / Edición de Turno Laboral
+  const openShiftModal = (shift = null) => {
+    const isEdit = Boolean(shift);
+    const startVal = shift?.StartTime ? String(shift.StartTime).slice(0, 5) : '08:00';
+    const endVal = shift?.EndTime ? String(shift.EndTime).slice(0, 5) : '17:00';
+    const body = `
+      <div class="form-grid">
+        <div class="field">
+          <label>Código del Turno *</label>
+          <input type="text" id="shift-code" value="${escapeHtml(shift?.Code || '')}" placeholder="Ej: DIU-01" required>
+        </div>
+        <div class="field">
+          <label>Nombre del Turno *</label>
+          <input type="text" id="shift-name" value="${escapeHtml(shift?.Name || '')}" placeholder="Ej: Jornada Administrativa" required>
+        </div>
+        <div class="field">
+          <label>Hora de Entrada *</label>
+          <input type="time" id="shift-start" value="${startVal}" required>
+        </div>
+        <div class="field">
+          <label>Hora de Salida *</label>
+          <input type="time" id="shift-end" value="${endVal}" required>
+        </div>
+        <div class="field">
+          <label>Tolerancia Entrada (min)</label>
+          <input type="number" id="shift-grace" min="0" max="120" value="${shift?.GraceMinutes ?? 10}">
+        </div>
+        <div class="field">
+          <label>Tiempo de Almuerzo (min)</label>
+          <input type="number" id="shift-break" min="0" max="180" value="${shift?.BreakMinutes ?? 60}">
+        </div>
+        <div class="field">
+          <label>Tipo de Jornada</label>
+          <select id="shift-type">
+            <option value="Diurno" ${(shift?.ShiftType || 'Diurno') === 'Diurno' ? 'selected' : ''}>Diurno</option>
+            <option value="Mixto" ${shift?.ShiftType === 'Mixto' ? 'selected' : ''}>Mixto</option>
+            <option value="Nocturno" ${shift?.ShiftType === 'Nocturno' ? 'selected' : ''}>Nocturno</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Estado</label>
+          <select id="shift-active">
+            <option value="true" ${shift?.IsActive !== false ? 'selected' : ''}>Activo</option>
+            <option value="false" ${shift?.IsActive === false ? 'selected' : ''}>Inactivo</option>
+          </select>
+        </div>
+      </div>
+    `;
+
+    showModal(isEdit ? 'Editar Turno Laboral' : 'Nuevo Turno Laboral', body, 'Guardar Turno', async modal => {
+      const code = modal.querySelector('#shift-code')?.value?.trim().toUpperCase();
+      const name = modal.querySelector('#shift-name')?.value?.trim();
+      const startTime = modal.querySelector('#shift-start')?.value;
+      const endTime = modal.querySelector('#shift-end')?.value;
+      const graceMinutes = Number(modal.querySelector('#shift-grace')?.value || 0);
+      const breakMinutes = Number(modal.querySelector('#shift-break')?.value || 0);
+      const shiftType = modal.querySelector('#shift-type')?.value || 'Diurno';
+      const isActive = modal.querySelector('#shift-active')?.value !== 'false';
+
+      if (!code || !name || !startTime || !endTime) {
+        throw new Error('Código, nombre, hora de inicio y hora de fin son obligatorios.');
+      }
+
+      await saveWorkShift({
+        id: shift?.Id || null,
+        code,
+        name,
+        startTime,
+        endTime,
+        graceMinutes,
+        breakMinutes,
+        shiftType,
+        isActive
+      });
+
+      toast(isEdit ? 'Turno actualizado exitosamente.' : 'Turno creado exitosamente.');
+      await loadHrShifts();
+      renderFn();
+    });
+  };
+
+  document.querySelectorAll('[data-action="hr-open-shift-modal"]').forEach(btn => {
+    btn.addEventListener('click', () => openShiftModal(null));
+  });
+
+  document.querySelectorAll('[data-action="hr-edit-shift"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const shift = (state.hr.shifts || []).find(s => String(s.Id) === String(btn.dataset.id));
+      if (shift) openShiftModal(shift);
+    });
+  });
+
   // Solicitar Corrección de Asistencia (Modal)
   const openCorrectionModal = (prefillAttendanceId = null, prefillDate = null) => {
     const todayStr = prefillDate || new Date().toISOString().slice(0, 10);
@@ -849,6 +1212,22 @@ export function bindHr(renderFn) {
     });
   });
 
+  // Helper para calcular días laborables (Lun-Vie) entre dos fechas YYYY-MM-DD
+  const countBusinessDays = (startStr, endStr) => {
+    if (!startStr || !endStr) return 0;
+    const start = new Date(`${startStr}T00:00:00`);
+    const end = new Date(`${endStr}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 0;
+    let count = 0;
+    const cur = new Date(start);
+    while (cur <= end) {
+      const day = cur.getDay();
+      if (day !== 0 && day !== 6) count++;
+      cur.setDate(cur.getDate() + 1);
+    }
+    return count;
+  };
+
   // Modal Solicitar Vacaciones
   document.querySelectorAll('[data-action="hr-open-vacation-request"]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -903,14 +1282,27 @@ export function bindHr(renderFn) {
           toast(err.message);
         }
       });
+
+      const modalEl = document.querySelector('.modal');
+      if (modalEl) {
+        const startInput = modalEl.querySelector('#vac-start-date');
+        const endInput = modalEl.querySelector('#vac-end-date');
+        const daysInput = modalEl.querySelector('#vac-days');
+        const syncDays = () => {
+          const calc = countBusinessDays(startInput?.value, endInput?.value);
+          if (calc > 0 && daysInput) daysInput.value = String(calc);
+        };
+        startInput?.addEventListener('change', syncDays);
+        endInput?.addEventListener('change', syncDays);
+      }
     });
   });
 
-    // Modal Solicitar Licencia / Permiso
+  // Modal Solicitar Licencia / Permiso
   document.querySelectorAll('[data-action="hr-open-leave-request"]').forEach(btn => {
     btn.addEventListener('click', () => {
       const types = state.hr.leaveTypes || [];
-      const typeOptions = types.map(t => `<option value="${t.Id}">${escapeHtml(t.Name)} (${t.IsPaid ? 'Con Goce' : 'Sin Goce'}) - Max ${t.MaxDaysPerYear ?? t.DefaultDays ?? 'N/A'} ${t.Unit === 'Horas' ? 'horas' : 'días'}</option>`).join('');
+      const typeOptions = types.map(t => `<option value="${t.Id}" data-unit="${t.Unit || 'Dias'}" data-attach="${t.RequiresAttachment ? '1' : '0'}">${escapeHtml(t.Name)} (${t.IsPaid ? 'Con Goce' : 'Sin Goce'}) - Max ${t.MaxDaysPerYear ?? t.DefaultDays ?? 'N/A'} ${t.Unit === 'Horas' ? 'horas' : 'días'}</option>`).join('');
 
       const body = `
         <div class="form-grid">
@@ -928,9 +1320,21 @@ export function bindHr(renderFn) {
             <label>Fecha de Fin *</label>
             <input type="date" id="leave-end-date" required>
           </div>
+          <div class="field leave-hours-field" style="display:none;">
+            <label>Hora Inicio *</label>
+            <input type="time" id="leave-start-time" value="08:00">
+          </div>
+          <div class="field leave-hours-field" style="display:none;">
+            <label>Hora Fin *</label>
+            <input type="time" id="leave-end-time" value="10:00">
+          </div>
           <div class="field">
-            <label>Días / Horas Solicitados *</label>
-            <input type="number" id="leave-days" min="1" max="90" required value="3">
+            <label id="leave-duration-label">Días / Horas Solicitados *</label>
+            <input type="number" id="leave-days" min="0.5" step="0.5" max="90" required value="3">
+          </div>
+          <div class="field full">
+            <label id="leave-file-label">Constancia o Certificado de Soporte (PDF, Imagen)</label>
+            <input type="file" id="leave-document" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx">
           </div>
           <div class="field full">
             <label>Motivo y Justificación *</label>
@@ -941,23 +1345,49 @@ export function bindHr(renderFn) {
 
       showModal('Solicitud de Licencia o Permiso Especial', body, 'Enviar para Aprobación', async modal => {
         const leaveTypeId = modal.querySelector('#leave-type-id')?.value;
+        const selectedType = types.find(t => String(t.Id) === String(leaveTypeId));
         const startDate = modal.querySelector('#leave-start-date')?.value;
         const endDate = modal.querySelector('#leave-end-date')?.value;
+        const startTime = modal.querySelector('#leave-start-time')?.value;
+        const endTime = modal.querySelector('#leave-end-time')?.value;
         const days = Number(modal.querySelector('#leave-days')?.value);
         const reason = modal.querySelector('#leave-reason')?.value?.trim();
+        const file = modal.querySelector('#leave-document')?.files?.[0] || null;
 
         if (!leaveTypeId || !startDate || !endDate || !reason) {
           throw new Error('Debe completar el tipo de permiso, fechas y motivo.');
         }
 
+        if (selectedType?.RequiresAttachment && !file) {
+          throw new Error(`El permiso "${selectedType.Name}" requiere adjuntar certificado o documento de soporte.`);
+        }
+
         try {
-          const res = await createLeaveRequest({
-            leaveTypeId,
-            startDate,
-            endDate,
-            duration: days,
-            reason
-          });
+          let payload;
+          if (file) {
+            payload = new FormData();
+            payload.append('leaveTypeId', leaveTypeId);
+            payload.append('startDate', startDate);
+            payload.append('endDate', endDate);
+            payload.append('duration', String(days));
+            payload.append('reason', reason);
+            if (selectedType?.Unit === 'Horas') {
+              if (startTime) payload.append('startTime', startTime);
+              if (endTime) payload.append('endTime', endTime);
+            }
+            payload.append('document', file);
+          } else {
+            payload = {
+              leaveTypeId,
+              startDate,
+              endDate,
+              duration: days,
+              reason,
+              ...(selectedType?.Unit === 'Horas' ? { startTime, endTime } : {})
+            };
+          }
+
+          const res = await createLeaveRequest(payload);
           toast(res.message || 'Solicitud de licencia enviada al flujo de aprobación.');
           await Promise.all([loadLeaveRequests(), loadMyApprovalRequests()]);
           renderFn();
@@ -965,6 +1395,44 @@ export function bindHr(renderFn) {
           toast(err.message);
         }
       });
+
+      const modalEl = document.querySelector('.modal');
+      if (modalEl) {
+        const typeSelect = modalEl.querySelector('#leave-type-id');
+        const durationLabel = modalEl.querySelector('#leave-duration-label');
+        const fileLabel = modalEl.querySelector('#leave-file-label');
+        const startInput = modalEl.querySelector('#leave-start-date');
+        const endInput = modalEl.querySelector('#leave-end-date');
+        const daysInput = modalEl.querySelector('#leave-days');
+
+        const updateLeaveFields = () => {
+          const opt = typeSelect?.selectedOptions?.[0];
+          const isHours = opt?.dataset?.unit === 'Horas';
+          const needsAttach = opt?.dataset?.attach === '1';
+          modalEl.querySelectorAll('.leave-hours-field').forEach(el => {
+            el.style.display = isHours ? '' : 'none';
+          });
+          if (durationLabel) durationLabel.textContent = isHours ? 'Horas Solicitadas *' : 'Días Solicitados *';
+          if (fileLabel) {
+            fileLabel.textContent = needsAttach
+              ? 'Constancia o Certificado de Soporte (Obligatorio) *'
+              : 'Constancia o Certificado de Soporte (Opcional)';
+          }
+        };
+
+        const syncLeaveDays = () => {
+          const opt = typeSelect?.selectedOptions?.[0];
+          if (opt?.dataset?.unit !== 'Horas') {
+            const calc = countBusinessDays(startInput?.value, endInput?.value);
+            if (calc > 0 && daysInput) daysInput.value = String(calc);
+          }
+        };
+
+        typeSelect?.addEventListener('change', updateLeaveFields);
+        startInput?.addEventListener('change', syncLeaveDays);
+        endInput?.addEventListener('change', syncLeaveDays);
+        updateLeaveFields();
+      }
     });
   });
 
@@ -992,6 +1460,43 @@ export function bindHr(renderFn) {
       }
     });
   });
+
+  // Helper para renderizar el resumen de la entidad en el modal de aprobación
+  const renderEntitySummaryBox = (summary) => {
+    if (!summary) return '';
+    const fmtDate = d => d ? new Date(d).toLocaleDateString('es-DO') : '-';
+    const fmtTime = d => d ? new Date(d).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' }) : '--:--';
+    if (summary.kind === 'Vacaciones') {
+      return `
+        <div style="background:var(--bg-soft, #f8fafc);padding:12px;border-radius:6px;border:1px solid var(--border);font-size:13px;">
+          <div style="font-weight:600;margin-bottom:6px;color:var(--primary);">Detalle de Vacaciones Solicitadas</div>
+          <div><strong>Período:</strong> ${fmtDate(summary.StartDate)} al ${fmtDate(summary.EndDate)} (${summary.DaysRequested || 0} días laborables)</div>
+          ${summary.Reason ? `<div style="margin-top:4px;"><strong>Observaciones:</strong> ${escapeHtml(summary.Reason)}</div>` : ''}
+        </div>
+      `;
+    }
+    if (summary.kind === 'Permiso') {
+      return `
+        <div style="background:var(--bg-soft, #f8fafc);padding:12px;border-radius:6px;border:1px solid var(--border);font-size:13px;">
+          <div style="font-weight:600;margin-bottom:6px;color:var(--primary);">Detalle de Licencia / Permiso (${escapeHtml(summary.LeaveTypeName || 'Permiso')})</div>
+          <div><strong>Período:</strong> ${fmtDate(summary.StartDate)} al ${fmtDate(summary.EndDate)} · <strong>Duración:</strong> ${summary.Duration || 0} ${summary.Unit === 'Horas' ? 'horas' : 'días'} (${summary.IsPaid ? 'Con Goce' : 'Sin Goce'})</div>
+          ${summary.Reason ? `<div style="margin-top:4px;"><strong>Motivo:</strong> ${escapeHtml(summary.Reason)}</div>` : ''}
+          ${summary.HasAttachment ? `<div style="margin-top:6px;"><a href="/api/hr/leaves/requests/${summary.Id}/attachment" target="_blank" style="color:var(--primary);font-weight:600;">📎 Descargar constancia adjunta (${escapeHtml(summary.AttachmentFileName || 'Soporte')})</a></div>` : ''}
+        </div>
+      `;
+    }
+    if (summary.kind === 'CorreccionAsistencia') {
+      return `
+        <div style="background:var(--bg-soft, #f8fafc);padding:12px;border-radius:6px;border:1px solid var(--border);font-size:13px;">
+          <div style="font-weight:600;margin-bottom:6px;color:var(--primary);">Detalle de Corrección de Asistencia</div>
+          <div><strong>Fecha de Jornada:</strong> ${fmtDate(summary.WorkDate)}</div>
+          <div><strong>Entrada Solicitada:</strong> ${fmtTime(summary.RequestedCheckIn)} · <strong>Salida Solicitada:</strong> ${fmtTime(summary.RequestedCheckOut)}</div>
+          ${summary.Reason ? `<div style="margin-top:4px;"><strong>Justificación:</strong> ${escapeHtml(summary.Reason)}</div>` : ''}
+        </div>
+      `;
+    }
+    return '';
+  };
 
   // Revisar y Decidir Aprobación (Modal)
   document.querySelectorAll('[data-action="hr-review-approval"]').forEach(btn => {
@@ -1021,6 +1526,8 @@ export function bindHr(renderFn) {
               <div><small class="muted">Fecha de Solicitud</small><div>${new Date(req.CreatedAt).toLocaleDateString('es-DO')}</div></div>
             </div>
 
+            ${renderEntitySummaryBox(detail.entitySummary)}
+
             ${history.length > 0 ? `
               <div>
                 <strong>Historial del Flujo de Autorización:</strong>
@@ -1030,15 +1537,15 @@ export function bindHr(renderFn) {
 
             <div class="field full">
               <label>Observaciones o Comentarios de la Decisión</label>
-              <textarea id="approval-decision-comments" placeholder="Ingrese comentarios para el colaborador y constancia de auditoría..."></textarea>
+              <textarea id="approval-decision-comments" placeholder="Ingrese comentarios para el empleado y constancia de auditoría..."></textarea>
             </div>
 
             <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;">
               <button class="secondary" id="btn-reject-approval" style="color:var(--danger);border-color:var(--danger);">
-                ✕ Rechazar Solicitud
+                Rechazar Solicitud
               </button>
               <button class="primary" id="btn-approve-approval">
-                ✓ Aprobar Solicitud
+                Aprobar Solicitud
               </button>
             </div>
           </div>
@@ -1112,6 +1619,7 @@ export function bindHr(renderFn) {
               <div><strong>Estado:</strong> ${req.Status}</div>
               <div><strong>Paso Actual:</strong> Paso ${req.CurrentStepNumber}</div>
             </div>
+            ${renderEntitySummaryBox(detail.entitySummary)}
             <div>
               <strong>Trazabilidad de Pasos y Firmas:</strong>
               <div style="margin-top:8px;">${historyHtml}</div>
@@ -1181,13 +1689,16 @@ export function bindHr(renderFn) {
     });
   });
 
-  // Cerrar popover de notificaciones si se hace click fuera
-  document.addEventListener('click', (e) => {
-    const popover = document.querySelector('#notifications-popover');
-    if (popover && !popover.classList.contains('hidden') && !e.target.closest('.topbar-notifications-wrapper')) {
-      popover.classList.add('hidden');
-    }
-  });
+  // Cerrar popover de notificaciones si se hace click fuera (singleton para evitar fuga de listeners)
+  if (!window.__hrOutsideClickBound) {
+    window.__hrOutsideClickBound = true;
+    document.addEventListener('click', (e) => {
+      const popover = document.querySelector('#notifications-popover');
+      if (popover && !popover.classList.contains('hidden') && !e.target.closest('.topbar-notifications-wrapper')) {
+        popover.classList.add('hidden');
+      }
+    });
+  }
 
   // Marcar todas las notificaciones como leídas
   document.querySelectorAll('[data-action="mark-all-notifications-read"]').forEach(btn => {

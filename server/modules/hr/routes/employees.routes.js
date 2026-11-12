@@ -13,17 +13,20 @@ import {
   executeLaborMovement
 } from '../repositories/movements.repo.js';
 import {
-  resolveTargetCompanyId,
+  resolveCompanyScope,
   assertCompanyAccess,
   assertEmployeeAccess,
-  hasPermission,
-  isGlobalAdmin,
-  isCompanyAdmin,
-  canViewAllCompanyEmployees
+  resolveEmployeeVisibilityFlags
 } from '../access.js';
 import { validateEmployeeInput } from '../validators.js';
-import { uploadPhoto, saveFile, getFilePath } from '../storage.js';
+import { uploadPhoto, withUpload, saveFile, getFilePath } from '../storage.js';
 import { generateEmployeePdf } from '../services/pdf.service.js';
+
+function csvCell(value) {
+  let str = String(value ?? '');
+  if (/^[=+\-@\t\r]/.test(str)) str = `'${str}`;
+  return `"${str.replace(/"/g, '""')}"`;
+}
 
 export function createEmployeesRouter(ctx) {
   const router = express.Router();
@@ -32,19 +35,14 @@ export function createEmployeesRouter(ctx) {
   // List employees with pagination and filters
   router.get('/employees', requirePermission('RRHH Empleados', 'Ver empleados'), async (req, res) => {
     try {
-      const companyId = resolveTargetCompanyId(req);
-      if (!companyId) return res.status(400).json({ message: 'Se requiere especificar la empresa.' });
-      await assertCompanyAccess(pool, req, companyId);
-
-      const canViewSalary = isGlobalAdmin(req) || isCompanyAdmin(req) || await hasPermission(pool, req.user.userId, 'RRHH Empleados', 'Ver información salarial', req);
-      const canViewSensitive = isGlobalAdmin(req) || isCompanyAdmin(req) || await hasPermission(pool, req.user.userId, 'RRHH Empleados', 'Ver datos sensibles', req);
-      const canViewAll = await canViewAllCompanyEmployees(pool, req);
+      const companyId = await resolveCompanyScope(pool, req);
+      const { canViewSalary, canViewSensitive, canViewAll } = await resolveEmployeeVisibilityFlags(pool, req);
 
       const result = await listEmployees(pool, {
         companyId,
         userId: req.user.userId,
-        isGlobal: isGlobalAdmin(req),
-        isCompanyAdmin: isCompanyAdmin(req),
+        isGlobal: req.user?.role === 'Super Admin',
+        isCompanyAdmin: req.user?.role === 'Company Admin',
         canViewAll,
         canViewSalary,
         canViewSensitive,
@@ -68,19 +66,14 @@ export function createEmployeesRouter(ctx) {
   // Export CSV
   router.get('/employees/export', requirePermission('RRHH Empleados', 'Exportar empleados'), async (req, res) => {
     try {
-      const companyId = resolveTargetCompanyId(req);
-      if (!companyId) return res.status(400).json({ message: 'Se requiere especificar la empresa.' });
-      await assertCompanyAccess(pool, req, companyId);
-
-      const canViewSalary = isGlobalAdmin(req) || isCompanyAdmin(req) || await hasPermission(pool, req.user.userId, 'RRHH Empleados', 'Ver información salarial', req);
-      const canViewSensitive = isGlobalAdmin(req) || isCompanyAdmin(req) || await hasPermission(pool, req.user.userId, 'RRHH Empleados', 'Ver datos sensibles', req);
-      const canViewAll = await canViewAllCompanyEmployees(pool, req);
+      const companyId = await resolveCompanyScope(pool, req);
+      const { canViewSalary, canViewSensitive, canViewAll } = await resolveEmployeeVisibilityFlags(pool, req);
 
       const result = await listEmployees(pool, {
         companyId,
         userId: req.user.userId,
-        isGlobal: isGlobalAdmin(req),
-        isCompanyAdmin: isCompanyAdmin(req),
+        isGlobal: req.user?.role === 'Super Admin',
+        isCompanyAdmin: req.user?.role === 'Company Admin',
         canViewAll,
         canViewSalary,
         canViewSensitive,
@@ -102,20 +95,20 @@ export function createEmployeesRouter(ctx) {
       const csvLines = [headers.join(',')];
       for (const e of result.data) {
         const row = [
-          `"${e.EmployeeCode}"`,
-          `"${e.FirstName}"`,
-          `"${e.LastName}"`,
-          `"${e.DocumentNumber || ''}"`,
-          `"${e.Email || ''}"`,
-          `"${e.Phone || ''}"`,
-          `"${e.DepartmentName || ''}"`,
-          `"${e.PositionTitle || ''}"`,
-          `"${e.BranchName || ''}"`,
-          `"${e.Status}"`,
-          `"${e.HireDate ? new Date(e.HireDate).toISOString().slice(0, 10) : ''}"`
+          csvCell(e.EmployeeCode),
+          csvCell(e.FirstName),
+          csvCell(e.LastName),
+          csvCell(e.DocumentNumber || ''),
+          csvCell(e.Email || ''),
+          csvCell(e.Phone || ''),
+          csvCell(e.DepartmentName || ''),
+          csvCell(e.PositionTitle || ''),
+          csvCell(e.BranchName || ''),
+          csvCell(e.Status),
+          csvCell(e.HireDate ? new Date(e.HireDate).toISOString().slice(0, 10) : '')
         ];
         if (canViewSalary) {
-          row.push(`"${e.BaseSalary || 0}"`, `"${e.SalaryCurrency || 'DOP'}"`);
+          row.push(csvCell(e.BaseSalary || 0), csvCell(e.SalaryCurrency || 'DOP'));
         }
         csvLines.push(row.join(','));
       }
@@ -133,9 +126,7 @@ export function createEmployeesRouter(ctx) {
   router.get('/employees/:id', requirePermission('RRHH Empleados', 'Ver empleados'), async (req, res) => {
     try {
       await assertEmployeeAccess(pool, req, req.params.id);
-
-      const canViewSalary = isGlobalAdmin(req) || isCompanyAdmin(req) || await hasPermission(pool, req.user.userId, 'RRHH Empleados', 'Ver información salarial', req);
-      const canViewSensitive = isGlobalAdmin(req) || isCompanyAdmin(req) || await hasPermission(pool, req.user.userId, 'RRHH Empleados', 'Ver datos sensibles', req);
+      const { canViewSalary, canViewSensitive } = await resolveEmployeeVisibilityFlags(pool, req);
 
       const employee = await getEmployeeById(pool, req.params.id, { canViewSalary, canViewSensitive });
       if (!employee) return res.status(404).json({ message: 'Empleado no encontrado.' });
@@ -163,27 +154,24 @@ export function createEmployeesRouter(ctx) {
   router.get('/employees/:id/pdf', requirePermission('RRHH Empleados', 'Exportar empleados'), async (req, res) => {
     try {
       await assertEmployeeAccess(pool, req, req.params.id);
+      const { canViewSalary } = await resolveEmployeeVisibilityFlags(pool, req);
 
-      const canViewSalary = isGlobalAdmin(req) || isCompanyAdmin(req) || await hasPermission(pool, req.user.userId, 'RRHH Empleados', 'Ver información salarial', req);
-      const canViewSensitive = true; // Authorized to export dossier
-
-      const employee = await getEmployeeById(pool, req.params.id, { canViewSalary, canViewSensitive });
+      const employee = await getEmployeeById(pool, req.params.id, { canViewSalary, canViewSensitive: true });
       if (!employee) return res.status(404).json({ message: 'Empleado no encontrado.' });
 
-      // Company info
-      const companyRes = await pool.request()
-        .input('id', employee.CompanyId)
-        .query('SELECT Name FROM dbo.Companies WHERE Id = @id;');
-      const companyName = companyRes.recordset[0]?.Name || 'Kinetix Core';
+      const [companyRes, photoRes] = await Promise.all([
+        pool.request()
+          .input('id', employee.CompanyId)
+          .query('SELECT Name FROM Companies WHERE Id = @id;'),
+        employee.PhotoFileId
+          ? pool.request()
+              .input('fileId', employee.PhotoFileId)
+              .query('SELECT StorageKey FROM HrFiles WHERE Id = @fileId;')
+          : Promise.resolve({ recordset: [] })
+      ]);
 
-      // Photo storage key if present
-      let photoStorageKey = null;
-      if (employee.PhotoFileId) {
-        const photoRes = await pool.request()
-          .input('fileId', employee.PhotoFileId)
-          .query('SELECT StorageKey FROM dbo.HrFiles WHERE Id = @fileId;');
-        photoStorageKey = photoRes.recordset[0]?.StorageKey || null;
-      }
+      const companyName = companyRes.recordset[0]?.Name || 'Kinetix Core';
+      const photoStorageKey = photoRes.recordset[0]?.StorageKey || null;
 
       await writeAudit(req, 'EXPORT', 'RRHH Empleados', 'HrEmployeePdf', String(employee.Id), employee.CompanyId);
 
@@ -200,9 +188,7 @@ export function createEmployeesRouter(ctx) {
   // Create new employee
   router.post('/employees', requirePermission('RRHH Empleados', 'Crear empleados'), async (req, res) => {
     try {
-      const companyId = resolveTargetCompanyId(req);
-      if (!companyId) return res.status(400).json({ message: 'Se requiere especificar la empresa.' });
-      await assertCompanyAccess(pool, req, companyId);
+      const companyId = await resolveCompanyScope(pool, req);
 
       const validation = validateEmployeeInput(req.body);
       if (!validation.valid) {
@@ -228,12 +214,15 @@ export function createEmployeesRouter(ctx) {
     } catch (err) {
       console.error('Error creating employee:', err);
       let msg = err.message || 'Error al crear empleado.';
-      if (err.number === 2627) {
-        if (err.message.includes('UQ_HrEmployees_Company_Code')) msg = 'Ya existe un empleado con ese código en la empresa.';
-        else if (err.message.includes('UQ_HrEmployees_Company_Document')) msg = 'Ya existe un empleado con ese tipo y número de documento en la empresa.';
-        else if (err.message.includes('UX_HrEmployees_UserId')) msg = 'Ese usuario ya está vinculado a otro empleado.';
+      const isDuplicate = err.code === '23505';
+      if (isDuplicate) {
+        const msgLower = (err.message || '').toLowerCase();
+        if (msgLower.includes('code')) msg = 'Ya existe un empleado con ese código en la empresa.';
+        else if (msgLower.includes('document')) msg = 'Ya existe un empleado con ese tipo y número de documento en la empresa.';
+        else if (msgLower.includes('userid')) msg = 'Ese usuario ya está vinculado a otro empleado.';
+        else msg = 'Ya existe un registro con esos datos únicos en la empresa.';
       }
-      res.status(err.number === 2627 ? 409 : (err.status || 500)).json({ message: msg });
+      res.status(isDuplicate ? 409 : (err.status || 500)).json({ message: msg });
     }
   });
 
@@ -264,12 +253,15 @@ export function createEmployeesRouter(ctx) {
       res.json(updated);
     } catch (err) {
       console.error('Error updating employee:', err);
-      res.status(err.number === 2627 ? 409 : (err.status || 500)).json({ message: err.message || 'Error al actualizar empleado.' });
+      const isDuplicate = err.code === '23505';
+      res.status(isDuplicate ? 409 : (err.status || 500)).json({
+        message: isDuplicate ? 'Ya existe un registro con esos datos únicos en la empresa.' : (err.message || 'Error al actualizar empleado.')
+      });
     }
   });
 
   // Upload/change photo
-  router.put('/employees/:id/photo', requirePermission('RRHH Empleados', 'Editar empleados'), uploadPhoto.single('photo'), async (req, res) => {
+  router.put('/employees/:id/photo', requirePermission('RRHH Empleados', 'Editar empleados'), withUpload(uploadPhoto.single('photo')), async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ message: 'Se requiere una imagen para la foto.' });
 
@@ -303,10 +295,11 @@ export function createEmployeesRouter(ctx) {
     try {
       const emp = await getEmployeeById(pool, req.params.id);
       if (!emp || !emp.PhotoFileId) return res.status(404).json({ message: 'No hay foto disponible.' });
+      await assertCompanyAccess(pool, req, emp.CompanyId);
 
       const photoRes = await pool.request()
         .input('id', emp.PhotoFileId)
-        .query('SELECT StorageKey, MimeType FROM dbo.HrFiles WHERE Id = @id;');
+        .query('SELECT StorageKey, MimeType FROM HrFiles WHERE Id = @id;');
       const photo = photoRes.recordset[0];
       if (!photo) return res.status(404).json({ message: 'Archivo de foto no encontrado.' });
 
@@ -314,11 +307,11 @@ export function createEmployeesRouter(ctx) {
       if (!fs.existsSync(filePath)) return res.status(404).json({ message: 'Archivo físico no disponible.' });
 
       res.setHeader('Content-Type', photo.MimeType);
-      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.setHeader('Cache-Control', 'private, max-age=3600');
       fs.createReadStream(filePath).pipe(res);
     } catch (err) {
       console.error('Error serving employee photo:', err);
-      res.status(500).json({ message: 'Error al servir fotografía.' });
+      res.status(err.status || 500).json({ message: err.message || 'Error al servir fotografía.' });
     }
   });
 
@@ -339,15 +332,15 @@ export function createEmployeesRouter(ctx) {
       res.json({ message: targetUserId ? 'Usuario vinculado al empleado.' : 'Usuario desvinculado.' });
     } catch (err) {
       console.error('Error linking user:', err);
-      res.status(err.number === 2627 ? 409 : (err.status || 500)).json({
-        message: err.number === 2627 ? 'Ese usuario ya está vinculado a otro empleado.' : 'Error al vincular usuario.'
+      const isDuplicate = err.code === '23505';
+      res.status(isDuplicate ? 409 : (err.status || 500)).json({
+        message: isDuplicate ? 'Ese usuario ya está vinculado a otro empleado.' : 'Error al vincular usuario.'
       });
     }
   });
 
   // ── Labor Movements ─────────────────────────────────────────────────────────
 
-  // Transfer branch / department
   router.post('/employees/:id/transfer', requirePermission('RRHH Empleados', 'Gestionar movimientos'), async (req, res) => {
     try {
       await assertEmployeeAccess(pool, req, req.params.id);
@@ -378,7 +371,6 @@ export function createEmployeesRouter(ctx) {
     }
   });
 
-  // Promote (Position and/or Salary)
   router.post('/employees/:id/promote', requirePermission('RRHH Empleados', 'Gestionar movimientos'), async (req, res) => {
     try {
       await assertEmployeeAccess(pool, req, req.params.id);
@@ -410,7 +402,6 @@ export function createEmployeesRouter(ctx) {
     }
   });
 
-  // Change position
   router.post('/employees/:id/position', requirePermission('RRHH Empleados', 'Gestionar movimientos'), async (req, res) => {
     try {
       await assertEmployeeAccess(pool, req, req.params.id);
@@ -441,7 +432,6 @@ export function createEmployeesRouter(ctx) {
     }
   });
 
-  // Salary adjustment
   router.post('/employees/:id/salary', requirePermission('RRHH Empleados', 'Ver información salarial'), async (req, res) => {
     try {
       await assertEmployeeAccess(pool, req, req.params.id);
@@ -472,7 +462,6 @@ export function createEmployeesRouter(ctx) {
     }
   });
 
-  // Suspend
   router.post('/employees/:id/suspend', requirePermission('RRHH Empleados', 'Cambiar estado laboral'), async (req, res) => {
     try {
       await assertEmployeeAccess(pool, req, req.params.id);
@@ -499,7 +488,6 @@ export function createEmployeesRouter(ctx) {
     }
   });
 
-  // Leave
   router.post('/employees/:id/leave', requirePermission('RRHH Empleados', 'Cambiar estado laboral'), async (req, res) => {
     try {
       await assertEmployeeAccess(pool, req, req.params.id);
@@ -526,7 +514,6 @@ export function createEmployeesRouter(ctx) {
     }
   });
 
-  // Reactivate
   router.post('/employees/:id/reactivate', requirePermission('RRHH Empleados', 'Cambiar estado laboral'), async (req, res) => {
     try {
       await assertEmployeeAccess(pool, req, req.params.id);
@@ -553,7 +540,6 @@ export function createEmployeesRouter(ctx) {
     }
   });
 
-  // Terminate
   router.post('/employees/:id/terminate', requirePermission('RRHH Empleados', 'Cambiar estado laboral'), async (req, res) => {
     try {
       await assertEmployeeAccess(pool, req, req.params.id);

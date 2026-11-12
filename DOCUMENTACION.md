@@ -9,9 +9,9 @@ Documentación técnica, arquitectura modular, flujos de datos y manual operativ
 - **Aplicación Web**: [http://localhost:3000](http://localhost:3000)
 - **Health Check API**: [http://localhost:3000/api/health](http://localhost:3000/api/health)
 - **Ruta de Trabajo**: `c:\Users\hidek\Desktop\Git\Kinetix`
-- **Base de Datos**: `KinetixCore`
-- **Motor SQL**: Microsoft SQL Server / LocalDB (`(localdb)\MSSQLLocalDB`)
-- **Driver de Conexión**: `msnodesqlv8` (Windows Auth) o `mssql` nativo (SQL Auth)
+- **Base de Datos**: `kinetix`
+- **Motor SQL**: PostgreSQL 14+ (vía `pg`)
+- **Capa de Abstracción**: `server/core/db.js` (punto único agnóstico de conexión y consultas)
 - **Puerto por defecto**: `3000`
 
 ---
@@ -25,14 +25,23 @@ Kinetix/
 ├── server.js                      # Servidor Express, middleware de seguridad, sesiones y Core API
 ├── package.json                   # Dependencias, scripts de testing y migración
 ├── .env                           # Variables de entorno locales (Excluido de Git)
-├── .env.example                   # Plantilla de configuración de variables de entorno
-├── database/                      # Esquemas SQL y migraciones versionadas
-│   ├── kinetix_core.sql           # Esquema base (Empresas, Usuarios, Sucursales, Roles)
-│   └── migrations/                # Migraciones idempotentes versionadas
-│       ├── 001_core_audit_hardening.sql       # Trigger de inmutabilidad en AuditLogs
-│       ├── 002_hr_core.sql                    # Fase 1 RRHH: Empleados, Departamentos, Cargos
-│       ├── 003_hr_approvals_notifications.sql # Fase 2: Flujos multietapa y notificaciones
-│       └── 004_hr_attendance_vacations.sql    # Fase 2: Asistencia, turnos, ponches y vacaciones
+├── database/                      # Migraciones unificadas SQL
+│   └── migrations/                # Migraciones idempotentes versionadas (001 a 003)
+│       ├── 001_schema.sql         # Esquema de tablas de Core y RRHH
+│       ├── 002_logic.sql          # Triggers, funciones de visibilidad y lógica de negocio
+│       └── 003_seed.sql           # Roles, usuarios iniciales, permisos y catálogos
+├── server/                        # Módulos desacoplados del backend
+│   ├── core/                      # Servicios transversales
+│   │   ├── auth.js                # Autenticación, sesiones y control de roles
+│   │   ├── db.js                  # CAPA ÚNICA de acceso a base de datos (agnóstica)
+│   │   ├── migrate.js             # Motor automático de migraciones
+│   │   └── security.js            # Rate limiting y protecciones HTTP
+│   └── modules/
+│       ├── admin/                 # Módulo de administración de empresas, usuarios, roles
+│       ├── auth/                  # Rutas de autenticación y health check
+│       ├── finance/               # Módulo financiero básico
+│       ├── inventory/             # Módulo de inventario y almacén
+│       └── hr/                    # Módulo integral de Recursos Humanos
 ├── server/                        # Módulos desacoplados del backend
 │   └── modules/
 │       └── hr/                    # Módulo integral de Recursos Humanos
@@ -45,11 +54,14 @@ Kinetix/
 │           ├── repositories/      # Capa de acceso a datos SQL (Data Access Layer)
 │           │   ├── approvals.repo.js
 │           │   ├── attendance.repo.js
+│           │   ├── catalogs.repo.js
+│           │   ├── dashboard.repo.js
 │           │   ├── departments.repo.js
 │           │   ├── documents.repo.js
 │           │   ├── employees.repo.js
+│           │   ├── leaves.repo.js
+│           │   ├── movements.repo.js
 │           │   ├── notifications.repo.js
-│           │   ├── orgchart.repo.js
 │           │   ├── positions.repo.js
 │           │   └── vacations.repo.js
 │           ├── routes/            # Controladores y definición de endpoints REST
@@ -60,16 +72,12 @@ Kinetix/
 │           │   ├── departments.routes.js
 │           │   ├── documents.routes.js
 │           │   ├── employees.routes.js
+│           │   ├── leaves.routes.js
 │           │   ├── notifications.routes.js
-│           │   ├── orgchart.routes.js
 │           │   ├── positions.routes.js
 │           │   └── vacations.routes.js
-│           └── services/          # Lógica de negocio (Business Logic Layer)
-│               ├── approval-engine.service.js
-│               ├── attendance.service.js
-│               ├── notification.service.js
-│               ├── pdf.service.js
-│               └── vacation-balance.service.js
+│           └── services/          # Servicios auxiliares
+│               └── pdf.service.js # Generación de fichas de empleados en PDF
 ├── public/                        # Raíz estática del Frontend SPA
 │   ├── index.html                 # Shell HTML con viewport responsive y tipografía Inter
 │   ├── styles.css                 # Sistema de diseño "Kinetic Precision" (Tokens HSL, Dark Mode)
@@ -261,16 +269,16 @@ El módulo de Recursos Humanos proporciona una solución de nivel empresarial ad
 
 ---
 
-## 7. Sistema de Diseño Visual "Kinetic Precision"
+## 7. Sistema de Diseño Visual "SAP Fiori Horizon / Kinetic Launchpad"
 
-El sistema de diseño visual corporativo se encuentra unificado en `public/styles.css`. Para consultar la especificación exhaustiva de tokens, paleta cromática, tipografía, componentes y reglas de interfaz, consulte [LINEA_GRAFICA.md](LINEA_GRAFICA.md).
+La interfaz de Kinetix implementa el estándar empresarial de **SAP Fiori (Spaces & Pages / SAP S/4HANA Launchpad)**, unificado en `public/styles.css`:
 
 Características principales:
-- **Paleta Cromática Semántica**: Tokens CSS institucionales y semánticos (`--royal`, `--emerald`, `--amber`, `--red`, `--purple`, etc.).
-- **Jerarquía Tipográfica**: Combinación de `Inter` (cuerpo e interfaz) y `Plus Jakarta Sans` (display y marcas).
-- **Micro-interacciones y Animaciones**: Transiciones de 150ms-250ms con curvas cúbicas suaves, efectos hover y elevaciones consistentes.
-- **Contraste y Legibilidad**: Navegación lateral en Deep Obsidian y espacio de trabajo de alta luminosidad.
-- **Totalmente Responsive**: Soporte completo para dispositivos móviles, tablets y monitores de alta resolución.
+- **Shell Bar Superior Omnipresente**: Barra superior con logotipo, selector de espacio `Inicio ▾`, Omnibar de búsqueda rápida (`Apps ▾ | Buscar en Kinetix...`), notificaciones in-app y badge de avatar del usuario (`JD`).
+- **Navegación Horizontal por Espacios (*Spaces & Pages*)**: Pestañas de acceso directo horizontal (`Mi Inicio`, `Recursos Humanos`, `Colaboradores`, `Asistencia`, `Vacaciones & Permisos`, `Aprobaciones`, `Inventario`, `Finanzas`, `Administración`) con indicador activo en azul corporativo (`#0070f2`).
+- **Sección de Apps (Tiles Rápidas)**: Mosaicos con filtros (`Favoritos`, `Usadas recientemente`, `Más frecuentes`) y código cromático semántico Fiori (Magenta, Forest Green, Teal, Amber, Blue, Coral) para accesos directos de 1 clic.
+- **Sección de Insights (Tarjetas Analíticas con Micro-Gráficos)**: Tarjetas ejecutivas con métricas en tiempo real, desviaciones porcentuales y gráficos SVG ligeros integrados (barras comparativas, dona de distribución de personal, barras apiladas por sucursales y gráficos mixtos de nómina/margen).
+- **Totalmente Responsive**: Soporte fluido para pantallas de alta resolución, tablets y dispositivos móviles.
 
 ---
 

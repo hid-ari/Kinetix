@@ -382,6 +382,21 @@ export async function loadHrShifts() {
 }
 
 /**
+ * Crea o actualiza un turno de trabajo
+ */
+export async function saveWorkShift(data) {
+  const res = await fetch('/api/hr/attendance/shifts', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  const result = await res.json();
+  if (!res.ok) throw new Error(result.message || 'Error al guardar turno laboral.');
+  return result;
+}
+
+/**
  * Carga el registro general de asistencias con filtros
  */
 export async function loadAttendanceList(filters = {}) {
@@ -529,14 +544,15 @@ export async function loadLeaveRequests(employeeId = null) {
 }
 
 /**
- * Crea solicitud de licencia
+ * Crea solicitud de licencia (soporta JSON o FormData con soporte/certificado adjunto)
  */
 export async function createLeaveRequest(data) {
+  const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
   const res = await fetch('/api/hr/leaves/request', {
     method: 'POST',
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
+    headers: isFormData ? undefined : { 'Content-Type': 'application/json' },
+    body: isFormData ? data : JSON.stringify(data)
   });
   const result = await res.json();
   if (!res.ok) throw new Error(result.message || 'Error al solicitar licencia.');

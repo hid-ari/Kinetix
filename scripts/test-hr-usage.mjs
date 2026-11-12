@@ -1,25 +1,15 @@
 import 'dotenv/config';
 import crypto from 'node:crypto';
 import assert from 'node:assert';
-import sql from 'mssql/msnodesqlv8.js';
+import { db } from '../server/core/db.js';
+import { createPersistentSession, hashSessionToken } from '../server/core/auth.js';
 
 const BASE_URL = 'http://localhost:3000';
 
 async function createTestSession(pool, userId) {
   const token = 'test-token-' + crypto.randomUUID();
-  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-  const expiresAt = new Date(Date.now() + 3600000);
-
-  await pool.request()
-    .input('hash', sql.NVarChar(64), tokenHash)
-    .input('userId', sql.NVarChar(450), userId)
-    .input('expires', sql.DateTime2, expiresAt)
-    .query(`
-      INSERT INTO dbo.UserSessions (TokenHash, UserId, ExpiresAt)
-      VALUES (@hash, @userId, @expires);
-    `);
-
-  return { token, tokenHash };
+  await createPersistentSession(userId, token);
+  return { token, tokenHash: hashSessionToken(token) };
 }
 
 async function api(path, { method = 'GET', body, token, headers = {} } = {}) {
@@ -61,17 +51,10 @@ async function runStatements(pool, queries) {
 
 async function main() {
   console.log('===============================================================');
-  console.log('🚀 INICIANDO PRUEBAS DE USO END-TO-END (HTTP) - MÓDULO DE RRHH');
+  console.log('[TEST] INICIANDO PRUEBAS DE USO END-TO-END (HTTP) - MÓDULO DE RRHH');
   console.log('===============================================================\n');
 
-  const server = process.env.DB_SERVER || '(localdb)\\MSSQLLocalDB';
-  const database = process.env.DB_DATABASE || 'KinetixCore';
-  const pool = await sql.connect({
-    server, database, driver: 'msnodesqlv8',
-    connectionString: `Driver={ODBC Driver 18 for SQL Server};Server=${server};Database=${database};Trusted_Connection=Yes;Encrypt=No;TrustServerCertificate=Yes;`,
-    options: { trustedConnection: true, trustServerCertificate: true }
-  });
-
+  const pool = db;
   const sessionsToClean = [];
   let deptId;
   let subDeptId;
@@ -81,26 +64,26 @@ async function main() {
   try {
     // Limpieza preventiva previa
     await runStatements(pool, [
-      "DELETE FROM dbo.HrEmployeeShifts WHERE EmployeeId IN (SELECT Id FROM dbo.HrEmployees WHERE UserId = 'temp-test-employee' OR EmployeeCode LIKE 'EMP-%');",
-      "DELETE FROM dbo.HrAttendance WHERE EmployeeId IN (SELECT Id FROM dbo.HrEmployees WHERE UserId = 'temp-test-employee' OR EmployeeCode LIKE 'EMP-%');",
-      "DELETE FROM dbo.HrAttendanceCorrections WHERE EmployeeId IN (SELECT Id FROM dbo.HrEmployees WHERE UserId = 'temp-test-employee' OR EmployeeCode LIKE 'EMP-%');",
-      "DELETE FROM dbo.HrVacationBalances WHERE EmployeeId IN (SELECT Id FROM dbo.HrEmployees WHERE UserId = 'temp-test-employee' OR EmployeeCode LIKE 'EMP-%');",
-      "DELETE FROM dbo.HrVacationRequests WHERE EmployeeId IN (SELECT Id FROM dbo.HrEmployees WHERE UserId = 'temp-test-employee' OR EmployeeCode LIKE 'EMP-%');",
-      "DELETE FROM dbo.HrEmergencyContacts WHERE EmployeeId IN (SELECT Id FROM dbo.HrEmployees WHERE UserId = 'temp-test-employee' OR EmployeeCode LIKE 'EMP-%');",
-      "DELETE FROM dbo.HrEmployeeDocuments WHERE EmployeeId IN (SELECT Id FROM dbo.HrEmployees WHERE UserId = 'temp-test-employee' OR EmployeeCode LIKE 'EMP-%');",
-      "DELETE FROM dbo.HrLeaveRequests WHERE EmployeeId IN (SELECT Id FROM dbo.HrEmployees WHERE UserId = 'temp-test-employee' OR EmployeeCode LIKE 'EMP-%');",
-      "DELETE FROM dbo.HrApprovalHistory WHERE RequestId IN (SELECT Id FROM dbo.HrApprovalRequests WHERE RequesterEmployeeId IN (SELECT Id FROM dbo.HrEmployees WHERE UserId = 'temp-test-employee' OR EmployeeCode LIKE 'EMP-%'));",
-      "DELETE FROM dbo.HrApprovalRequests WHERE RequesterEmployeeId IN (SELECT Id FROM dbo.HrEmployees WHERE UserId = 'temp-test-employee' OR EmployeeCode LIKE 'EMP-%');",
-      "DISABLE TRIGGER TR_HrEmployeeMovements_Immutable ON dbo.HrEmployeeMovements;",
-      "DELETE FROM dbo.HrEmployeeMovements WHERE EmployeeId IN (SELECT Id FROM dbo.HrEmployees WHERE UserId = 'temp-test-employee' OR EmployeeCode LIKE 'EMP-%');",
-      "ENABLE TRIGGER TR_HrEmployeeMovements_Immutable ON dbo.HrEmployeeMovements;",
-      "DELETE FROM dbo.HrEmployees WHERE UserId = 'temp-test-employee' OR EmployeeCode LIKE 'EMP-%';",
-      "DISABLE TRIGGER TR_AuditLogs_Immutable ON dbo.AuditLogs;",
-      "DELETE FROM dbo.AuditLogs WHERE UserId = 'temp-test-employee';",
-      "ENABLE TRIGGER TR_AuditLogs_Immutable ON dbo.AuditLogs;",
-      "DELETE FROM dbo.HrNotifications WHERE UserId = 'temp-test-employee';",
-      "DELETE FROM dbo.UserRoles WHERE UserId = 'temp-test-employee';",
-      "DELETE FROM dbo.UserOrganizations WHERE UserId = 'temp-test-employee';"
+      "DELETE FROM HrEmployeeShifts WHERE EmployeeId IN (SELECT Id FROM HrEmployees WHERE UserId = 'temp-test-employee' OR Email LIKE 'laura.%@empresa.com');",
+      "DELETE FROM HrAttendance WHERE EmployeeId IN (SELECT Id FROM HrEmployees WHERE UserId = 'temp-test-employee' OR Email LIKE 'laura.%@empresa.com');",
+      "DELETE FROM HrAttendanceCorrections WHERE EmployeeId IN (SELECT Id FROM HrEmployees WHERE UserId = 'temp-test-employee' OR Email LIKE 'laura.%@empresa.com');",
+      "DELETE FROM HrVacationBalances WHERE EmployeeId IN (SELECT Id FROM HrEmployees WHERE UserId = 'temp-test-employee' OR Email LIKE 'laura.%@empresa.com');",
+      "DELETE FROM HrVacationRequests WHERE EmployeeId IN (SELECT Id FROM HrEmployees WHERE UserId = 'temp-test-employee' OR Email LIKE 'laura.%@empresa.com');",
+      "DELETE FROM HrEmergencyContacts WHERE EmployeeId IN (SELECT Id FROM HrEmployees WHERE UserId = 'temp-test-employee' OR Email LIKE 'laura.%@empresa.com');",
+      "DELETE FROM HrEmployeeDocuments WHERE EmployeeId IN (SELECT Id FROM HrEmployees WHERE UserId = 'temp-test-employee' OR Email LIKE 'laura.%@empresa.com');",
+      "DELETE FROM HrLeaveRequests WHERE EmployeeId IN (SELECT Id FROM HrEmployees WHERE UserId = 'temp-test-employee' OR Email LIKE 'laura.%@empresa.com');",
+      "DELETE FROM HrApprovalHistory WHERE RequestId IN (SELECT Id FROM HrApprovalRequests WHERE RequesterEmployeeId IN (SELECT Id FROM HrEmployees WHERE UserId = 'temp-test-employee' OR Email LIKE 'laura.%@empresa.com'));",
+      "DELETE FROM HrApprovalRequests WHERE RequesterEmployeeId IN (SELECT Id FROM HrEmployees WHERE UserId = 'temp-test-employee' OR Email LIKE 'laura.%@empresa.com');",
+      "ALTER TABLE HrEmployeeMovements DISABLE TRIGGER TR_HrEmployeeMovements_Immutable;",
+      "DELETE FROM HrEmployeeMovements WHERE EmployeeId IN (SELECT Id FROM HrEmployees WHERE UserId = 'temp-test-employee' OR Email LIKE 'laura.%@empresa.com');",
+      "ALTER TABLE HrEmployeeMovements ENABLE TRIGGER TR_HrEmployeeMovements_Immutable;",
+      "DELETE FROM HrEmployees WHERE UserId = 'temp-test-employee' OR Email LIKE 'laura.%@empresa.com';",
+      "DELETE FROM HrNotifications WHERE UserId = 'temp-test-employee';",
+      "DELETE FROM UserRoles WHERE UserId = 'temp-test-employee';",
+      "ALTER TABLE AuditLogs DISABLE TRIGGER TR_AuditLogs_Immutable;",
+      "DELETE FROM AuditLogs WHERE UserId = 'temp-test-employee';",
+      "ALTER TABLE AuditLogs ENABLE TRIGGER TR_AuditLogs_Immutable;",
+      "DELETE FROM UserOrganizations WHERE UserId = 'temp-test-employee';"
     ]);
 
     // 1. Iniciar sesiones HTTP de prueba (Super Admin y Colaborador temporal)
@@ -109,18 +92,15 @@ async function main() {
     sessionsToClean.push(superAdminSession.tokenHash);
 
     // Asegurar usuario temporal para el colaborador
-    const empRoleIdRes = await pool.request().query("SELECT Id FROM dbo.Roles WHERE Name = 'Employee';");
+    const empRoleIdRes = await pool.request().query("SELECT Id FROM Roles WHERE Name = 'Employee';");
     const empRoleId = empRoleIdRes.recordset[0]?.Id;
     await pool.request().query(`
-      IF NOT EXISTS (SELECT 1 FROM dbo.UserOrganizations WHERE UserId = 'temp-test-employee')
-      BEGIN
-        INSERT INTO dbo.UserOrganizations (UserId, CompanyId, FirstName, LastName, Email, PasswordHash, IsActive)
-        VALUES ('temp-test-employee', 1, 'Test', 'Colaborador', 'test.colab@kinetix.local', 'hash', 1);
-      END
-      IF NOT EXISTS (SELECT 1 FROM dbo.UserRoles WHERE UserId = 'temp-test-employee')
-      BEGIN
-        INSERT INTO dbo.UserRoles (UserId, RoleId) VALUES ('temp-test-employee', ${empRoleId || 8});
-      END
+      INSERT INTO UserOrganizations (UserId, CompanyId, FirstName, LastName, Email, PasswordHash, IsActive)
+      VALUES ('temp-test-employee', 1, 'Test', 'Colaborador', 'test.colab@kinetix.local', 'hash', TRUE)
+      ON CONFLICT (UserId) DO NOTHING;
+      INSERT INTO UserRoles (UserId, RoleId)
+      VALUES ('temp-test-employee', ${empRoleId || 4})
+      ON CONFLICT (UserId, RoleId) DO NOTHING;
     `);
 
     const empSession = await createTestSession(pool, 'temp-test-employee');
@@ -307,20 +287,21 @@ function generateRandomCedula() {
     await pool.request()
       .input('uid', 'temp-test-employee')
       .input('eid', createdEmpId)
-      .query('UPDATE dbo.HrEmployees SET UserId = @uid WHERE Id = @eid;');
+      .query('UPDATE HrEmployees SET UserId = @uid WHERE Id = @eid;');
 
-    const shiftRes = await pool.request().query('SELECT TOP 1 Id FROM dbo.HrWorkShifts WHERE IsActive = 1;');
+    const shiftRes = await pool.request().query('SELECT Id FROM HrWorkShifts WHERE IsActive = TRUE LIMIT 1;');
     const shiftId = shiftRes.recordset[0]?.Id;
     if (shiftId) {
       await pool.request().query(`
-        INSERT INTO dbo.HrEmployeeShifts (EmployeeId, ShiftId, EffectiveDate)
+        INSERT INTO HrEmployeeShifts (EmployeeId, ShiftId, EffectiveDate)
         VALUES (${createdEmpId}, ${shiftId}, '2026-01-01');
       `);
     }
 
     await pool.request().query(`
-      INSERT INTO dbo.HrVacationBalances (EmployeeId, PeriodYear, DaysEarned, DaysUsed, DaysPending)
-      VALUES (${createdEmpId}, 2026, 14, 0, 0);
+      INSERT INTO HrVacationBalances (EmployeeId, PeriodYear, DaysEarned, DaysUsed, DaysPending)
+      VALUES (${createdEmpId}, 2026, 14, 0, 0)
+      ON CONFLICT (EmployeeId, PeriodYear) DO NOTHING;
     `);
 
     // Descarga de Ficha PDF
@@ -375,9 +356,9 @@ function generateRandomCedula() {
     console.log(`   ✓ Ponche de salida: ${punchOutRes.status === 200 ? 'Registrado con éxito' : 'Ya existía ponche de salida hoy (409 manejado correctamente)'}.`);
 
     // Solicitud de corrección de ponche
-    await pool.request().query(`DELETE FROM dbo.HrAttendanceCorrections WHERE EmployeeId = ${createdEmpId} AND WorkDate = '2026-10-05';`);
-    await pool.request().query(`DELETE FROM dbo.HrApprovalHistory WHERE RequestId IN (SELECT Id FROM dbo.HrApprovalRequests WHERE EntityName = N'HrAttendanceCorrections' AND RequesterEmployeeId = ${createdEmpId});`);
-    await pool.request().query(`DELETE FROM dbo.HrApprovalRequests WHERE EntityName = N'HrAttendanceCorrections' AND RequesterEmployeeId = ${createdEmpId};`);
+    await pool.request().query(`DELETE FROM HrAttendanceCorrections WHERE EmployeeId = ${createdEmpId} AND WorkDate = '2026-10-05';`);
+    await pool.request().query(`DELETE FROM HrApprovalHistory WHERE RequestId IN (SELECT Id FROM HrApprovalRequests WHERE EntityName = 'HrAttendanceCorrections' AND RequesterEmployeeId = ${createdEmpId});`);
+    await pool.request().query(`DELETE FROM HrApprovalRequests WHERE EntityName = 'HrAttendanceCorrections' AND RequesterEmployeeId = ${createdEmpId};`);
 
     const corrRes = await api('/api/hr/attendance/corrections', {
       method: 'POST',
@@ -395,7 +376,7 @@ function generateRandomCedula() {
 
     // 7. Vacaciones: Saldo, Solicitud y Validación de Solapamiento
     console.log('\n7. Vacaciones (Art. 177) y Validación de Solapamiento...');
-    await pool.request().query(`UPDATE dbo.HrVacationBalances SET DaysPending = 0, DaysUsed = 0 WHERE EmployeeId = ${createdEmpId};`);
+    await pool.request().query(`UPDATE HrVacationBalances SET DaysPending = 0, DaysUsed = 0 WHERE EmployeeId = ${createdEmpId};`);
 
     const vacBalRes = await api('/api/hr/vacations/balance', { token: empToken });
     assert.strictEqual(vacBalRes.status, 200);
@@ -404,31 +385,32 @@ function generateRandomCedula() {
 
     // Solicitud de vacaciones
     // Clean old vacation requests for this employee if any
-    await pool.request().query(`DELETE FROM dbo.HrApprovalHistory WHERE RequestId IN (SELECT Id FROM dbo.HrApprovalRequests WHERE EntityName = N'HrVacationRequests' AND RequesterEmployeeId = ${createdEmpId});`);
-    await pool.request().query(`DELETE FROM dbo.HrVacationRequests WHERE EmployeeId = ${createdEmpId};`);
-    await pool.request().query(`DELETE FROM dbo.HrApprovalRequests WHERE EntityName = N'HrVacationRequests' AND RequesterEmployeeId = ${createdEmpId};`);
+    await pool.request().query(`DELETE FROM HrApprovalHistory WHERE RequestId IN (SELECT Id FROM HrApprovalRequests WHERE EntityName = 'HrVacationRequests' AND RequesterEmployeeId = ${createdEmpId});`);
+    await pool.request().query(`DELETE FROM HrVacationRequests WHERE EmployeeId = ${createdEmpId};`);
+    await pool.request().query(`DELETE FROM HrApprovalRequests WHERE EntityName = 'HrVacationRequests' AND RequesterEmployeeId = ${createdEmpId};`);
 
     const vacReqRes = await api('/api/hr/vacations/request', {
       method: 'POST',
       token: empToken,
       body: {
-        startDate: '2026-10-19',
-        endDate: '2026-10-23',
+        startDate: '2026-11-16',
+        endDate: '2026-11-20',
         daysRequested: 5,
         reason: 'Descanso programado anual'
       }
     });
+    if (vacReqRes.status !== 201) console.error('vacReqRes error:', vacReqRes.data);
     assert.strictEqual(vacReqRes.status, 201, 'Debe registrar solicitud de vacaciones');
     const vacationId = vacReqRes.data.request.Id;
-    console.log(`   ✓ Solicitud de vacaciones registrada (#${vacationId}) del 2026-10-19 al 2026-10-23 (5 días).`);
+    console.log(`   ✓ Solicitud de vacaciones registrada (#${vacationId}) del 2026-11-16 al 2026-11-20 (5 días).`);
 
     // Intentar solicitar vacaciones solapadas
     const overlapRes = await api('/api/hr/vacations/request', {
       method: 'POST',
       token: empToken,
       body: {
-        startDate: '2026-10-21',
-        endDate: '2026-10-22',
+        startDate: '2026-11-18',
+        endDate: '2026-11-19',
         daysRequested: 2,
         reason: 'Intento solapado'
       }
@@ -437,10 +419,10 @@ function generateRandomCedula() {
     console.log('   ✓ Rechazo estricto de solicitudes solapadas verificado (409 Conflict).');
 
     // Calendario de ausencias
-    const calRes = await api('/api/hr/vacations/calendar?year=2026&month=10', { token: empToken });
+    const calRes = await api('/api/hr/vacations/calendar?year=2026&month=11', { token: empToken });
     assert.strictEqual(calRes.status, 200);
     assert(Array.isArray(calRes.data), 'El calendario debe ser un arreglo unificado de eventos');
-    console.log(`   ✓ Calendario consultado (${calRes.data.length} eventos en octubre 2026).`);
+    console.log(`   ✓ Calendario consultado (${calRes.data.length} eventos en noviembre 2026).`);
 
     // 8. Licencias y Permisos
     console.log('\n8. Licencias Especiales y Catálogo de Permisos...');
@@ -450,17 +432,17 @@ function generateRandomCedula() {
     const marriageLeave = leaveTypesRes.data.find(t => t.Code === 'LIC-MATR') || leaveTypesRes.data[0];
 
     // Clean old leave requests for this employee if any
-    await pool.request().query(`DELETE FROM dbo.HrApprovalHistory WHERE RequestId IN (SELECT Id FROM dbo.HrApprovalRequests WHERE EntityName = N'HrLeaveRequests' AND RequesterEmployeeId = ${createdEmpId});`);
-    await pool.request().query(`DELETE FROM dbo.HrLeaveRequests WHERE EmployeeId = ${createdEmpId};`);
-    await pool.request().query(`DELETE FROM dbo.HrApprovalRequests WHERE EntityName = N'HrLeaveRequests' AND RequesterEmployeeId = ${createdEmpId};`);
+    await pool.request().query(`DELETE FROM HrApprovalHistory WHERE RequestId IN (SELECT Id FROM HrApprovalRequests WHERE EntityName = 'HrLeaveRequests' AND RequesterEmployeeId = ${createdEmpId});`);
+    await pool.request().query(`DELETE FROM HrLeaveRequests WHERE EmployeeId = ${createdEmpId};`);
+    await pool.request().query(`DELETE FROM HrApprovalRequests WHERE EntityName = 'HrLeaveRequests' AND RequesterEmployeeId = ${createdEmpId};`);
 
     const leaveReqRes = await api('/api/hr/leaves/request', {
       method: 'POST',
       token: empToken,
       body: {
         leaveTypeId: marriageLeave.Id,
-        startDate: '2026-10-26',
-        endDate: '2026-10-28',
+        startDate: '2026-11-23',
+        endDate: '2026-11-25',
         duration: 3,
         reason: 'Licencia por Matrimonio (Art. 54 Código de Trabajo)'
       }
@@ -540,51 +522,51 @@ function generateRandomCedula() {
     console.log('\n11. Limpieza y archivo de datos de prueba...');
     if (createdEmpId) {
       await runStatements(pool, [
-        `UPDATE dbo.HrEmployees SET UserId = NULL WHERE Id = ${createdEmpId};`,
-        `DELETE FROM dbo.HrEmployeeShifts WHERE EmployeeId = ${createdEmpId};`,
-        `DELETE FROM dbo.HrAttendance WHERE EmployeeId = ${createdEmpId};`,
-        `DELETE FROM dbo.HrAttendanceCorrections WHERE EmployeeId = ${createdEmpId};`,
-        `DELETE FROM dbo.HrVacationBalances WHERE EmployeeId = ${createdEmpId};`,
-        `DELETE FROM dbo.HrVacationRequests WHERE EmployeeId = ${createdEmpId};`,
-        `DELETE FROM dbo.HrEmergencyContacts WHERE EmployeeId = ${createdEmpId};`,
-        `DELETE FROM dbo.HrEmployeeDocuments WHERE EmployeeId = ${createdEmpId};`,
-        `DELETE FROM dbo.HrLeaveRequests WHERE EmployeeId = ${createdEmpId};`,
-        `DELETE FROM dbo.HrApprovalHistory WHERE RequestId IN (SELECT Id FROM dbo.HrApprovalRequests WHERE RequesterEmployeeId = ${createdEmpId});`,
-        `DELETE FROM dbo.HrApprovalRequests WHERE RequesterEmployeeId = ${createdEmpId};`,
-        'DISABLE TRIGGER TR_HrEmployeeMovements_Immutable ON dbo.HrEmployeeMovements;',
-        `DELETE FROM dbo.HrEmployeeMovements WHERE EmployeeId = ${createdEmpId};`,
-        'ENABLE TRIGGER TR_HrEmployeeMovements_Immutable ON dbo.HrEmployeeMovements;',
-        `DELETE FROM dbo.HrEmployees WHERE Id = ${createdEmpId};`
+        `UPDATE HrEmployees SET UserId = NULL WHERE Id = ${createdEmpId};`,
+        `DELETE FROM HrEmployeeShifts WHERE EmployeeId = ${createdEmpId};`,
+        `DELETE FROM HrAttendance WHERE EmployeeId = ${createdEmpId};`,
+        `DELETE FROM HrAttendanceCorrections WHERE EmployeeId = ${createdEmpId};`,
+        `DELETE FROM HrVacationBalances WHERE EmployeeId = ${createdEmpId};`,
+        `DELETE FROM HrVacationRequests WHERE EmployeeId = ${createdEmpId};`,
+        `DELETE FROM HrEmergencyContacts WHERE EmployeeId = ${createdEmpId};`,
+        `DELETE FROM HrEmployeeDocuments WHERE EmployeeId = ${createdEmpId};`,
+        `DELETE FROM HrLeaveRequests WHERE EmployeeId = ${createdEmpId};`,
+        `DELETE FROM HrApprovalHistory WHERE RequestId IN (SELECT Id FROM HrApprovalRequests WHERE RequesterEmployeeId = ${createdEmpId});`,
+        `DELETE FROM HrApprovalRequests WHERE RequesterEmployeeId = ${createdEmpId};`,
+        'ALTER TABLE HrEmployeeMovements DISABLE TRIGGER TR_HrEmployeeMovements_Immutable;',
+        `DELETE FROM HrEmployeeMovements WHERE EmployeeId = ${createdEmpId};`,
+        'ALTER TABLE HrEmployeeMovements ENABLE TRIGGER TR_HrEmployeeMovements_Immutable;',
+        `DELETE FROM HrEmployees WHERE Id = ${createdEmpId};`
       ]);
     }
     if (posId) {
-      await pool.request().query(`DELETE FROM dbo.HrPositions WHERE Id = ${posId};`);
+      await pool.request().query(`DELETE FROM HrPositions WHERE Id = ${posId};`);
     }
     if (subDeptId || deptId) {
-      await pool.request().query(`DELETE FROM dbo.HrDepartments WHERE Id IN (${subDeptId || 0}, ${deptId || 0});`);
+      await pool.request().query(`DELETE FROM HrDepartments WHERE Id IN (${subDeptId || 0}, ${deptId || 0});`);
     }
-    await pool.request().query("DELETE FROM dbo.HrAttendanceCorrections WHERE Reason = N'Olvido de marcación en lector biométrico';");
+    await pool.request().query("DELETE FROM HrAttendanceCorrections WHERE Reason = 'Olvido de marcación en lector biométrico';");
     console.log('   ✓ Registros temporales eliminados.');
 
     console.log('\n===============================================================');
-    console.log('✨ TODAS LAS PRUEBAS DE USO DE RRHH PASARON EXITOSAMENTE (100%)');
+    console.log('[OK] TODAS LAS PRUEBAS DE USO DE RRHH PASARON EXITOSAMENTE (100%)');
     console.log('===============================================================\n');
   } finally {
     // Clean up test sessions
     for (const hash of sessionsToClean) {
       try {
-        await pool.request().input('h', hash).query('DELETE FROM dbo.UserSessions WHERE TokenHash = @h;');
+        await pool.request().input('h', hash).query('DELETE FROM UserSessions WHERE TokenHash = @h;');
       } catch {}
     }
     // Clean up temporary test user
     try {
       await runStatements(pool, [
-        'DISABLE TRIGGER TR_AuditLogs_Immutable ON dbo.AuditLogs;',
-        "DELETE FROM dbo.AuditLogs WHERE UserId = 'temp-test-employee';",
-        'ENABLE TRIGGER TR_AuditLogs_Immutable ON dbo.AuditLogs;',
-        "DELETE FROM dbo.HrNotifications WHERE UserId = 'temp-test-employee';",
-        "DELETE FROM dbo.UserRoles WHERE UserId = 'temp-test-employee';",
-        "DELETE FROM dbo.UserOrganizations WHERE UserId = 'temp-test-employee';"
+        "DELETE FROM HrNotifications WHERE UserId = 'temp-test-employee';",
+        "DELETE FROM UserRoles WHERE UserId = 'temp-test-employee';",
+        "ALTER TABLE AuditLogs DISABLE TRIGGER TR_AuditLogs_Immutable;",
+        "DELETE FROM AuditLogs WHERE UserId = 'temp-test-employee';",
+        "ALTER TABLE AuditLogs ENABLE TRIGGER TR_AuditLogs_Immutable;",
+        "DELETE FROM UserOrganizations WHERE UserId = 'temp-test-employee';"
       ]);
     } catch {}
     await pool.close();
@@ -592,6 +574,6 @@ function generateRandomCedula() {
 }
 
 main().catch(err => {
-  console.error('\n❌ ERROR EN PRUEBAS DE USO:', err);
+  console.error('\n[ERROR] EN PRUEBAS DE USO:', err);
   process.exit(1);
 });

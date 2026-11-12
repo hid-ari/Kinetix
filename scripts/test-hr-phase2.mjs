@@ -1,6 +1,6 @@
 import 'dotenv/config';
-import sql from 'mssql/msnodesqlv8.js';
 import assert from 'node:assert';
+import { db } from '../server/core/db.js';
 import { recordCheckIn, recordCheckOut, listAttendance, listWorkShifts } from '../server/modules/hr/repositories/attendance.repo.js';
 import { getEmployeeVacationBalance, createVacationRequest, applyVacationApproval } from '../server/modules/hr/repositories/vacations.repo.js';
 import { listLeaveTypes, createLeaveRequest, applyLeaveApproval } from '../server/modules/hr/repositories/leaves.repo.js';
@@ -10,30 +10,23 @@ import { getUnreadNotificationsCount, listUserNotifications, markNotificationRea
 async function runPhase2Tests() {
   console.log('=== INICIANDO PRUEBAS AUTOMATIZADAS: RRHH FASE 2 ===\n');
 
-  const server = process.env.DB_SERVER || '(localdb)\\MSSQLLocalDB';
-  const database = process.env.DB_DATABASE || 'KinetixCore';
-  const pool = await sql.connect({
-    server, database, driver: 'msnodesqlv8',
-    connectionString: `Driver={ODBC Driver 18 for SQL Server};Server=${server};Database=${database};Trusted_Connection=Yes;Encrypt=No;TrustServerCertificate=Yes;`,
-    options: { trustedConnection: true, trustServerCertificate: true }
-  });
-
+  const pool = db;
   let employeeId;
   let tempEmpCreated = false;
 
   try {
-    const compRes = await pool.request().query('SELECT TOP 1 Id FROM dbo.Companies WHERE IsActive = 1;');
+    const compRes = await pool.request().query('SELECT Id FROM Companies WHERE IsActive = TRUE LIMIT 1;');
     const companyId = compRes.recordset[0]?.Id;
     assert(companyId, 'Debe existir una empresa activa');
 
-    const empRes = await pool.request().query("SELECT TOP 1 Id, UserId FROM dbo.HrEmployees WHERE Status = N'Activo';");
+    const empRes = await pool.request().query("SELECT Id, UserId FROM HrEmployees WHERE Status = 'Activo' AND HireDate <= now() - INTERVAL '1 year' ORDER BY HireDate ASC LIMIT 1;");
     if (empRes.recordset[0]) {
       employeeId = empRes.recordset[0].Id;
     } else {
       const insRes = await pool.request().query(`
-        INSERT INTO dbo.HrEmployees (CompanyId, EmployeeCode, FirstName, LastName, DocumentType, DocumentNumber, Email, HireDate, Status, BaseSalary, PayFrequency)
-        OUTPUT INSERTED.Id
-        VALUES (1, 'EMP-TEMP-P2', 'Test', 'Phase2', 'Cedula', '402-0000000-0', 'test.p2@empresa.com', '2023-01-01', 'Activo', 50000, 'Mensual');
+        INSERT INTO HrEmployees (CompanyId, EmployeeCode, FirstName, LastName, DocumentType, DocumentNumber, Email, HireDate, Status, BaseSalary, PayFrequency)
+        VALUES (1, 'EMP-TEMP-P2', 'Test', 'Phase2', 'Cedula', '402-0000000-0', 'test.p2@empresa.com', '2023-01-01', 'Activo', 50000, 'Mensual')
+        RETURNING Id;
       `);
       employeeId = insRes.recordset[0].Id;
       tempEmpCreated = true;
@@ -73,7 +66,7 @@ async function runPhase2Tests() {
     console.log('\n2. Probando saldo de vacaciones y escala dominicana (Art. 177)...');
     await pool.request()
       .input('empId', employeeId)
-      .query('UPDATE dbo.HrVacationBalances SET DaysPending = 0, DaysUsed = 0 WHERE EmployeeId = @empId;');
+      .query('UPDATE HrVacationBalances SET DaysPending = 0, DaysUsed = 0 WHERE EmployeeId = @empId;');
 
     const balance = await getEmployeeVacationBalance(pool, employeeId);
     assert(balance.DaysEarned >= 14, 'Empleado debe tener al menos 14 días ganados según escala legal');
@@ -82,10 +75,10 @@ async function runPhase2Tests() {
     // 3. Vacation Request & Multi-step approval flow
     console.log('\n3. Probando solicitud de vacaciones y flujo de aprobación multietapa...');
     // Clean up test dates to prevent duplicate/overlap conflicts on re-run
-    await pool.request().input('empId', employeeId).query("DELETE FROM dbo.HrVacationRequests WHERE EmployeeId = @empId;");
-    await pool.request().input('empId', employeeId).query("DELETE FROM dbo.HrLeaveRequests WHERE EmployeeId = @empId;");
-    await pool.request().input('empId', employeeId).query("DELETE FROM dbo.HrApprovalHistory WHERE RequestId IN (SELECT Id FROM dbo.HrApprovalRequests WHERE RequesterEmployeeId = @empId AND RequestType IN (N'Vacaciones', N'Permiso'));");
-    await pool.request().input('empId', employeeId).query("DELETE FROM dbo.HrApprovalRequests WHERE RequesterEmployeeId = @empId AND RequestType IN (N'Vacaciones', N'Permiso');");
+    await pool.request().input('empId', employeeId).query("DELETE FROM HrVacationRequests WHERE EmployeeId = @empId;");
+    await pool.request().input('empId', employeeId).query("DELETE FROM HrLeaveRequests WHERE EmployeeId = @empId;");
+    await pool.request().input('empId', employeeId).query("DELETE FROM HrApprovalHistory WHERE RequestId IN (SELECT Id FROM HrApprovalRequests WHERE RequesterEmployeeId = @empId AND RequestType IN ('Vacaciones', 'Permiso'));");
+    await pool.request().input('empId', employeeId).query("DELETE FROM HrApprovalRequests WHERE RequesterEmployeeId = @empId AND RequestType IN ('Vacaciones', 'Permiso');");
 
     const daysToRequest = 5;
     const { vacationRequest, approval } = await createVacationRequest(pool, {
@@ -104,7 +97,7 @@ async function runPhase2Tests() {
     console.log(`   ✓ Solicitud de vacaciones creada (#${vacationRequest.Id}) enlazada a Flujo de Aprobación (#${approval.Id}).`);
 
     // Check pending approvals
-    const adminUserRes = await pool.request().query("SELECT TOP 1 UserId FROM dbo.UserOrganizations WHERE Email = 'superadmin@kinetix.local';");
+    const adminUserRes = await pool.request().query("SELECT UserId FROM UserOrganizations WHERE Email = 'superadmin@kinetix.local' LIMIT 1;");
     const adminUserId = adminUserRes.recordset[0]?.UserId;
 
     const pending = await getPendingApprovalsForUser(pool, {
@@ -180,9 +173,9 @@ async function runPhase2Tests() {
       .input('compId', companyId)
       .input('uid', adminUserId)
       .query(`
-        INSERT INTO dbo.HrFiles (CompanyId, UploadedBy, OriginalName, StorageKey, MimeType, SizeBytes, Sha256)
-        OUTPUT INSERTED.Id
-        VALUES (@compId, @uid, N'constancia_medica.pdf', N'test/constancia.pdf', N'application/pdf', 2048, N'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
+        INSERT INTO HrFiles (CompanyId, UploadedBy, OriginalName, StorageKey, MimeType, SizeBytes, Sha256)
+        VALUES (@compId, @uid, 'constancia_medica.pdf', 'test/constancia.pdf', 'application/pdf', 2048, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855')
+        RETURNING Id;
       `);
     const testFileId = fileRes.recordset[0].Id;
 
@@ -226,7 +219,8 @@ async function runPhase2Tests() {
     console.log(`   ✓ Notificación #${firstNotif.Id} (${firstNotif.Title}) marcada como leída.`);
 
     // Clean up test file
-    await pool.request().input('fid', testFileId).query('UPDATE dbo.HrLeaveRequests SET AttachedFileId = NULL WHERE AttachedFileId = @fid; DELETE FROM dbo.HrFiles WHERE Id = @fid;');
+    await pool.request().input('fid', testFileId).query('UPDATE HrLeaveRequests SET AttachedFileId = NULL WHERE AttachedFileId = @fid;');
+    await pool.request().input('fid', testFileId).query('DELETE FROM HrFiles WHERE Id = @fid;');
 
     console.log('\n======================================================');
     console.log('TODAS LAS PRUEBAS DE LA FASE 2 COMPLETADAS CON ÉXITO.');
@@ -234,22 +228,23 @@ async function runPhase2Tests() {
   } finally {
     if (tempEmpCreated && employeeId) {
       try {
-        await pool.request().input('id', employeeId).query(`
-          DELETE FROM dbo.HrEmployeeShifts WHERE EmployeeId = @id;
-          DELETE FROM dbo.HrAttendance WHERE EmployeeId = @id;
-          DELETE FROM dbo.HrAttendanceCorrections WHERE EmployeeId = @id;
-          DELETE FROM dbo.HrVacationBalances WHERE EmployeeId = @id;
-          DELETE FROM dbo.HrVacationRequests WHERE EmployeeId = @id;
-          DELETE FROM dbo.HrEmergencyContacts WHERE EmployeeId = @id;
-          DELETE FROM dbo.HrEmployeeDocuments WHERE EmployeeId = @id;
-          DELETE FROM dbo.HrLeaveRequests WHERE EmployeeId = @id;
-          DELETE FROM dbo.HrApprovalHistory WHERE RequestId IN (SELECT Id FROM dbo.HrApprovalRequests WHERE RequesterEmployeeId = @id);
-          DELETE FROM dbo.HrApprovalRequests WHERE RequesterEmployeeId = @id;
-          DISABLE TRIGGER TR_HrEmployeeMovements_Immutable ON dbo.HrEmployeeMovements;
-          DELETE FROM dbo.HrEmployeeMovements WHERE EmployeeId = @id;
-          ENABLE TRIGGER TR_HrEmployeeMovements_Immutable ON dbo.HrEmployeeMovements;
-          DELETE FROM dbo.HrEmployees WHERE Id = @id;
-        `);
+        const cleanupQueries = [
+          'DELETE FROM HrEmployeeShifts WHERE EmployeeId = @id;',
+          'DELETE FROM HrAttendance WHERE EmployeeId = @id;',
+          'DELETE FROM HrAttendanceCorrections WHERE EmployeeId = @id;',
+          'DELETE FROM HrVacationBalances WHERE EmployeeId = @id;',
+          'DELETE FROM HrVacationRequests WHERE EmployeeId = @id;',
+          'DELETE FROM HrEmergencyContacts WHERE EmployeeId = @id;',
+          'DELETE FROM HrEmployeeDocuments WHERE EmployeeId = @id;',
+          'DELETE FROM HrLeaveRequests WHERE EmployeeId = @id;',
+          'DELETE FROM HrApprovalHistory WHERE RequestId IN (SELECT Id FROM HrApprovalRequests WHERE RequesterEmployeeId = @id);',
+          'DELETE FROM HrApprovalRequests WHERE RequesterEmployeeId = @id;',
+          'DELETE FROM HrEmployeeMovements WHERE EmployeeId = @id;',
+          'DELETE FROM HrEmployees WHERE Id = @id;'
+        ];
+        for (const sql of cleanupQueries) {
+          await pool.request().input('id', employeeId).query(sql);
+        }
       } catch (cleanErr) {
         console.error('Error cleaning up temp employee:', cleanErr.message);
       }
@@ -259,6 +254,6 @@ async function runPhase2Tests() {
 }
 
 runPhase2Tests().catch(err => {
-  console.error('\n❌ ERROR EN PRUEBAS FASE 2:', err);
+  console.error('\n[ERROR] EN PRUEBAS FASE 2:', err);
   process.exit(1);
 });

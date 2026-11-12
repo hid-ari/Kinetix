@@ -4,9 +4,9 @@ import {
   createLeaveRequest,
   listLeaveRequests
 } from '../repositories/leaves.repo.js';
-import { resolveTargetCompanyId, isGlobalAdmin, isCompanyAdmin, isHrManager } from '../access.js';
+import { resolveTargetCompanyId, isHrManager } from '../access.js';
 import { resolveActingEmployeeId, NO_EMPLOYEE_MESSAGE } from '../employee-context.js';
-import { uploadDocument, saveFile } from '../storage.js';
+import { uploadDocument, withUpload, saveFile } from '../storage.js';
 
 function sendError(res, err, fallback) {
   if (err.status) return res.status(err.status).json({ message: err.message });
@@ -55,12 +55,12 @@ export function createLeavesRouter(ctx) {
   const handleSubmitLeave = async (req, res) => {
     try {
       const companyId = resolveTargetCompanyId(req);
-      const employeeId = await resolveActingEmployeeId(pool, req, companyId, req.body.employeeId);
+      const employeeId = await resolveActingEmployeeId(pool, req, companyId, req.body?.employeeId);
       if (!employeeId) return res.status(400).json({ message: NO_EMPLOYEE_MESSAGE });
 
-      const { leaveTypeId, startDate, endDate, startTime, endTime } = req.body;
-      const reason = typeof req.body.reason === 'string' ? req.body.reason : '';
-      const duration = Number(req.body.duration ?? req.body.requestedDays ?? 1);
+      const { leaveTypeId, startDate, endDate, startTime, endTime } = req.body || {};
+      const reason = typeof req.body?.reason === 'string' ? req.body.reason : '';
+      const duration = Number(req.body?.duration ?? req.body?.requestedDays ?? 1);
       if (!leaveTypeId || !startDate || !endDate || !reason.trim()) {
         return res.status(400).json({ message: 'Tipo de permiso, fechas y motivo son obligatorios.' });
       }
@@ -107,8 +107,8 @@ export function createLeavesRouter(ctx) {
       sendError(res, err, 'Error al solicitar permiso o licencia.');
     }
   };
-  router.post('/leaves/request', requirePermission('RRHH Permisos', 'Solicitar permisos'), uploadDocument.single('document'), handleSubmitLeave);
-  router.post('/leaves/requests', requirePermission('RRHH Permisos', 'Solicitar permisos'), uploadDocument.single('document'), handleSubmitLeave);
+  router.post('/leaves/request', requirePermission('RRHH Permisos', 'Solicitar permisos'), withUpload(uploadDocument.single('document')), handleSubmitLeave);
+  router.post('/leaves/requests', requirePermission('RRHH Permisos', 'Solicitar permisos'), withUpload(uploadDocument.single('document')), handleSubmitLeave);
 
   return router;
 }

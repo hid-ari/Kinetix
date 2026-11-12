@@ -35,7 +35,7 @@ export function orgChartView() {
             <span style="font-family:monospace; font-size:11px; font-weight:700; color:var(--royal);">${escapeHtml(dept.Code)}</span>
             <strong style="display:block; font-size:15px; color:var(--navy); margin-top:2px;">${escapeHtml(dept.Name)}</strong>
           </div>
-          <span class="badge active" style="font-size:11px;">${deptEmployees.length} colaboradores</span>
+          <span class="badge active" style="font-size:11px;">${deptEmployees.length} empleados</span>
         </div>
 
         <div style="padding:16px 18px;">
@@ -70,7 +70,7 @@ export function orgChartView() {
                 `;
               }).join('')}
             </div>
-          ` : '<p class="panel-note" style="margin:0;">Sin colaboradores asignados en este departamento.</p>'}
+          ` : '<p class="panel-note" style="margin:0;">Sin empleados asignados en este departamento.</p>'}
         </div>
 
         ${subDepts.length ? `

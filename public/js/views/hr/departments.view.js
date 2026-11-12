@@ -21,7 +21,8 @@ export function departmentsView() {
               <th>Sucursal</th>
               <th>Dependencia Jerárquica</th>
               <th>Responsable / Manager</th>
-              <th>Colaboradores</th>
+              <th>Cargos</th>
+              <th>Empleados</th>
               <th>Estado</th>
               <th style="text-align:right;">Acciones</th>
             </tr>
@@ -53,6 +54,7 @@ export function departmentsView() {
                       </div>
                     ` : `<span style="color:var(--muted); font-size:12px;">Sin responsable asignado</span>`}
                   </td>
+                  <td><strong style="font-variant-numeric:tabular-nums;">${d.PositionsCount ?? 0}</strong> <small style="color:var(--muted)">puestos</small></td>
                   <td><strong style="font-variant-numeric:tabular-nums;">${d.ActiveEmployeesCount ?? 0}</strong> <small style="color:var(--muted)">activos</small></td>
                   <td>
                     ${badge(d.IsActive ? 'Activo' : 'Inactivo')}
@@ -69,7 +71,7 @@ export function departmentsView() {
               `;
             }).join('') : `
               <tr>
-                <td colspan="8" class="empty">No hay departamentos registrados. Haz clic en "Nuevo departamento".</td>
+                <td colspan="9" class="empty">No hay departamentos registrados. Haz clic en "Nuevo departamento".</td>
               </tr>
             `}
           </tbody>

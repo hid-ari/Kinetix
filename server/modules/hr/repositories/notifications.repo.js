@@ -1,4 +1,3 @@
-import sql from 'mssql/msnodesqlv8.js';
 
 /**
  * Creates an in-app notification for a specific user
@@ -12,34 +11,22 @@ export async function createNotification(pool, {
   referenceType = null,
   referenceId = null
 }) {
-  const result = await pool.request()
-    .input('companyId', sql.Int, companyId)
-    .input('userId', sql.NVarChar(450), userId)
-    .input('title', sql.NVarChar(150), String(title ?? '').slice(0, 150))
-    .input('message', sql.NVarChar(1000), String(message ?? '').slice(0, 1000))
-    .input('category', sql.NVarChar(50), category)
-    .input('refType', sql.NVarChar(50), referenceType ? String(referenceType) : null)
-    .input('refId', sql.NVarChar(100), referenceId ? String(referenceId) : null)
-    .query(`
-      INSERT INTO dbo.HrNotifications (CompanyId, UserId, Title, Message, Category, ReferenceType, ReferenceId)
-      OUTPUT INSERTED.Id, INSERTED.Title, INSERTED.Category, INSERTED.CreatedAt
-      VALUES (@companyId, @userId, @title, @message, @category, @refType, @refId);
-    `);
-  return result.recordset[0];
+  return pool.insert('HrNotifications', {
+    CompanyId: companyId,
+    UserId: userId,
+    Title: String(title ?? '').slice(0, 150),
+    Message: String(message ?? '').slice(0, 1000),
+    Category: category,
+    ReferenceType: referenceType ? String(referenceType) : null,
+    ReferenceId: referenceId ? String(referenceId) : null
+  }, { returning: 'Id, Title, Category, CreatedAt' });
 }
 
 /**
  * Gets count of unread notifications for a user
  */
 export async function getUnreadNotificationsCount(pool, userId) {
-  const result = await pool.request()
-    .input('userId', sql.NVarChar(450), userId)
-    .query(`
-      SELECT COUNT(*) AS unreadCount
-      FROM dbo.HrNotifications
-      WHERE UserId = @userId AND IsRead = 0;
-    `);
-  return result.recordset[0]?.unreadCount || 0;
+  return pool.count('HrNotifications', { UserId: userId, IsRead: false });
 }
 
 /**
@@ -48,22 +35,22 @@ export async function getUnreadNotificationsCount(pool, userId) {
 export async function listUserNotifications(pool, userId, { page = 1, pageSize = 20, unreadOnly = false } = {}) {
   const offset = (Math.max(1, page) - 1) * pageSize;
   let where = `WHERE UserId = @userId`;
-  if (unreadOnly) where += ` AND IsRead = 0`;
+  if (unreadOnly) where += ` AND IsRead = FALSE`;
 
   const [countRes, dataRes] = await Promise.all([
     pool.request()
-      .input('userId', sql.NVarChar(450), userId)
-      .query(`SELECT COUNT(*) AS total FROM dbo.HrNotifications ${where};`),
+      .input('userId', userId)
+      .query(`SELECT COUNT(*) AS total FROM HrNotifications ${where};`),
     pool.request()
-      .input('userId', sql.NVarChar(450), userId)
-      .input('offset', sql.Int, offset)
-      .input('pageSize', sql.Int, pageSize)
+      .input('userId', userId)
+      .input('offset', offset)
+      .input('pageSize', pageSize)
       .query(`
         SELECT Id, CompanyId, Title, Message, Category, ReferenceType, ReferenceId, IsRead, ReadAt, CreatedAt
-        FROM dbo.HrNotifications
+        FROM HrNotifications
         ${where}
         ORDER BY CreatedAt DESC
-        OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY;
+        LIMIT @pageSize OFFSET @offset;
       `)
   ]);
 
@@ -81,28 +68,20 @@ export async function listUserNotifications(pool, userId, { page = 1, pageSize =
 export async function markNotificationRead(pool, id, userId) {
   const numericId = Number(id);
   if (!Number.isSafeInteger(numericId) || numericId <= 0) return undefined;
-  const result = await pool.request()
-    .input('id', sql.BigInt, numericId)
-    .input('userId', sql.NVarChar(450), userId)
-    .query(`
-      UPDATE dbo.HrNotifications
-      SET IsRead = 1, ReadAt = COALESCE(ReadAt, SYSUTCDATETIME())
-      OUTPUT INSERTED.Id, INSERTED.IsRead, INSERTED.ReadAt, DELETED.IsRead AS WasRead
-      WHERE Id = @id AND UserId = @userId;
-    `);
-  return result.recordset[0];
+  const res = await pool.update('HrNotifications', { Id: numericId, UserId: userId }, {
+    IsRead: true,
+    ReadAt: new Date()
+  }, { returning: 'Id, IsRead, ReadAt' });
+  return Array.isArray(res) ? res[0] : res;
 }
 
 /**
  * Marks all notifications for a user as read
  */
 export async function markAllNotificationsRead(pool, userId) {
-  await pool.request()
-    .input('userId', sql.NVarChar(450), userId)
-    .query(`
-      UPDATE dbo.HrNotifications
-      SET IsRead = 1, ReadAt = SYSUTCDATETIME()
-      WHERE UserId = @userId AND IsRead = 0;
-    `);
+  await pool.update('HrNotifications', { UserId: userId, IsRead: false }, {
+    IsRead: true,
+    ReadAt: new Date()
+  }, { returning: false });
   return { success: true };
 }

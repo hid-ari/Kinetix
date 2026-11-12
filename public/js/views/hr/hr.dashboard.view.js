@@ -54,7 +54,7 @@ export function hrDashboard() {
           <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
         </div>
         <div class="stat-content">
-          <span class="stat-label">Total Colaboradores</span>
+          <span class="stat-label">Total Empleados</span>
           <strong class="stat-value">${total}</strong>
           <span class="stat-sub">${active} en operaciones activas</span>
         </div>
@@ -151,7 +151,7 @@ export function hrDashboard() {
                     <div>
                       <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;">
                         <strong>${escapeHtml(dept.DepartmentName)}</strong>
-                        <span style="color:var(--muted)">${dept.Count} colaboradores (${pct}%)</span>
+                        <span style="color:var(--muted)">${dept.Count} empleados (${pct}%)</span>
                       </div>
                       <div style="height:7px; background:#e2e8f0; border-radius:4px; overflow:hidden;">
                         <div style="height:100%; width:${pct}%; background:linear-gradient(90deg, #2563eb 0%, #3b82f6 100%); border-radius:4px;"></div>
@@ -160,7 +160,7 @@ export function hrDashboard() {
                   `;
                 }).join('')}
               </div>
-            ` : '<p class="panel-note">No hay departamentos configurados con colaboradores activos.</p>'}
+            ` : '<p class="panel-note">No hay departamentos configurados con empleados activos.</p>'}
           </div>
         </div>
 
@@ -197,7 +197,7 @@ export function hrDashboard() {
                     <div>
                       <strong>${escapeHtml(b.BranchName)}</strong>
                     </div>
-                    <span class="badge active">${b.Count} colaboradores</span>
+                    <span class="badge active">${b.Count} empleados</span>
                   </div>
                 `).join('')}
               </div>
@@ -212,7 +212,7 @@ export function hrDashboard() {
                 <svg viewBox="0 0 20 20" fill="currentColor" style="width:18px;height:18px;color:#2563eb;"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/></svg>
                 <h2>Cumpleaños del Mes</h2>
               </div>
-              <span class="panel-note">${birthdays.length} colaboradores</span>
+              <span class="panel-note">${birthdays.length} empleados</span>
             </div>
             <div class="panel-body" style="display:grid; gap:10px;">
               ${birthdays.map(b => `

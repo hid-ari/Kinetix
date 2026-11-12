@@ -1,0 +1,215 @@
+/* ==========================================================================
+   BUTTONS & ACTION TRIGGERS
+   Botones primarios, secundarios, destructivos, ghost, enlaces e íconos
+   ========================================================================== */
+
+.primary,
+.secondary,
+.danger,
+.ghost {
+  border-radius: 10px;
+  padding: 8.5px 16px;
+  border: 1px solid transparent;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.16s cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  cursor: pointer;
+}
+
+.primary {
+  background: var(--royal-gradient);
+  color: white;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+}
+
+.primary:hover {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.45);
+  transform: translateY(-1.5px);
+}
+
+.primary:active {
+  transform: translateY(0.5px) scale(0.98);
+}
+
+.secondary {
+  background: var(--surface);
+  border-color: #cbd5e1;
+  color: #334155;
+  box-shadow: var(--shadow-xs);
+}
+
+.secondary:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.secondary:active {
+  transform: translateY(0.5px) scale(0.98);
+}
+
+.danger {
+  background: var(--red-soft);
+  color: var(--red);
+  border-color: rgba(225, 29, 72, 0.2);
+}
+
+.danger:hover {
+  background: #fecdd3;
+  color: #9f1239;
+  border-color: #fda4af;
+  box-shadow: 0 2px 8px rgba(225, 29, 72, 0.2);
+  transform: translateY(-1px);
+}
+
+.danger:active {
+  transform: translateY(0.5px) scale(0.98);
+}
+
+.ghost {
+  background: transparent;
+  color: var(--muted);
+  border-color: transparent;
+}
+
+.ghost:hover {
+  background: #f1f5f9;
+  color: var(--ink);
+}
+
+/* Grupos de Botones en Encabezados y Barras */
+.inline-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.header-actions .primary,
+.header-actions .secondary {
+  height: 38px;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 9px;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+
+.header-actions .primary {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  border: 1px solid #1d4ed8;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+}
+
+.header-actions .primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+}
+
+.header-actions .secondary {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.header-actions .secondary:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+/* Botones de Ícono y Acciones de Fila */
+.icon-btn {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--muted);
+  padding: 7px 10px;
+  position: relative;
+  transition: all 0.16s ease;
+}
+
+.icon-btn:hover {
+  background: #f8fafc;
+  color: var(--ink);
+  border-color: #cbd5e1;
+}
+
+.icon-btn-action {
+  background: transparent;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #475569;
+  transition: all 0.15s ease;
+}
+
+.icon-btn-action:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+.row-action {
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: var(--royal);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.row-action:hover {
+  background: var(--royal-soft);
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+  text-decoration: none;
+}
+
+.link-btn {
+  background: transparent;
+  border: none;
+  color: var(--royal);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.link-btn.full-width {
+  width: 100%;
+  display: block;
+}
+

@@ -8,14 +8,14 @@ import { assertEmployeeAccess, isGlobalAdmin, isCompanyAdmin } from './access.js
 export async function findOwnEmployee(pool, req) {
   const byUser = await pool.request()
     .input('uid', req.user.userId)
-    .query('SELECT TOP 1 Id, CompanyId FROM dbo.HrEmployees WHERE UserId = @uid;');
+    .query('SELECT Id, CompanyId FROM HrEmployees WHERE UserId = @uid LIMIT 1;');
   if (byUser.recordset[0]) return byUser.recordset[0];
 
   if (req.user.email && req.user.companyId) {
     const byEmail = await pool.request()
       .input('email', req.user.email)
       .input('companyId', req.user.companyId)
-      .query('SELECT TOP 1 Id, CompanyId FROM dbo.HrEmployees WHERE Email = @email AND CompanyId = @companyId;');
+      .query('SELECT Id, CompanyId FROM HrEmployees WHERE Email = @email AND CompanyId = @companyId LIMIT 1;');
     if (byEmail.recordset[0]) return byEmail.recordset[0];
   }
   return null;
@@ -43,7 +43,7 @@ export async function resolveActingEmployeeId(pool, req, companyId, explicitId =
 
   const empRes = await pool.request()
     .input('id', targetId)
-    .query('SELECT Id, CompanyId FROM dbo.HrEmployees WHERE Id = @id;');
+    .query('SELECT Id, CompanyId FROM HrEmployees WHERE Id = @id;');
   const emp = empRes.recordset[0];
   if (!emp || (companyId && emp.CompanyId !== Number(companyId))) {
     const err = new Error('Empleado no encontrado.');

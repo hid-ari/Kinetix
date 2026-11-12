@@ -6,7 +6,7 @@ import { hrBadge } from './employees.view.js';
 export function employeeDetailView(employee) {
   if (!employee) {
     return `
-      ${breadcrumb([['dashboard', 'Inicio'], ['hr-dashboard', 'Recursos Humanos'], ['hr-employees', 'Empleados']])}
+      ${breadcrumb([['hr-employees', 'Empleados'], ['hr-employee-detail', 'Expediente']])}
       <div class="panel empty">Empleado no encontrado o sin permisos suficientes.</div>
     `;
   }
@@ -63,12 +63,14 @@ export function employeeDetailView(employee) {
         </button>
 
         <button class="secondary" data-action="open-photo-upload" data-id="${employee.Id}" title="Cambiar fotografía del empleado">
-          📷 Foto
+          <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;"><path fill-rule="evenodd" d="M4 5a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V7a2 2 0 00-2-2h-1.586a1 1 0 01-.707-.293l-1.121-1.121A2 2 0 0011.172 3H8.828a2 2 0 00-1.414.586L6.293 4.707A1 1 0 015.586 5H4zm6 9a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+          <span>Foto</span>
         </button>
 
         ${!isTerminated ? `
           <button class="secondary" data-action="edit-employee" data-id="${employee.Id}">
-            ✏️ Editar
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>
+            <span>Editar</span>
           </button>
 
           <!-- Movements Dropdown / Action Group -->
@@ -100,7 +102,7 @@ export function employeeDetailView(employee) {
           </div>
         ` : `
           <button class="primary" data-action="open-movement-modal" data-movement="reactivate" data-id="${employee.Id}">
-            Reactivar Colaborador
+            Reactivar Empleado
           </button>
         `}
       </div>
@@ -124,30 +126,52 @@ export function employeeDetailView(employee) {
               <span class="panel-note">Datos de identidad</span>
             </div>
             <div class="panel-body">
-              <div class="form-grid">
-                <div>
-                  <span class="panel-note">Tipo y Número de Documento</span>
-                  <p><strong>${escapeHtml(employee.DocumentType)}:</strong> ${escapeHtml(employee.DocumentNumber || 'No disponible')}</p>
+              <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap: 14px;">
+                <div class="detail-field-box">
+                  <span class="detail-label">Tipo y Número de Documento</span>
+                  <span class="detail-val"><strong>${escapeHtml(employee.DocumentType)}:</strong> ${escapeHtml(employee.DocumentNumber || 'No disponible')}</span>
                 </div>
-                <div>
-                  <span class="panel-note">Fecha de Nacimiento</span>
-                  <p>${employee.BirthDate ? displayDate(employee.BirthDate) : 'No registrada'}</p>
+                <div class="detail-field-box">
+                  <span class="detail-label">Fecha de Nacimiento</span>
+                  <span class="detail-val">${employee.BirthDate ? displayDate(employee.BirthDate) : 'No registrada'}</span>
                 </div>
-                <div>
-                  <span class="panel-note">Sexo</span>
-                  <p>${employee.Sex === 'M' ? 'Masculino' : employee.Sex === 'F' ? 'Femenino' : 'No especificado'}</p>
+                <div class="detail-field-box">
+                  <span class="detail-label">Sexo</span>
+                  <span class="detail-val">${employee.Sex === 'M' ? 'Masculino' : employee.Sex === 'F' ? 'Femenino' : 'No especificado'}</span>
                 </div>
-                <div>
-                  <span class="panel-note">Nacionalidad</span>
-                  <p>${escapeHtml(employee.Nationality || 'Dominicana')}</p>
+                <div class="detail-field-box">
+                  <span class="detail-label">Nacionalidad</span>
+                  <span class="detail-val">${escapeHtml(employee.Nationality || 'Dominicana')}</span>
                 </div>
-                <div>
-                  <span class="panel-note">Estado Civil</span>
-                  <p>${escapeHtml(employee.MaritalStatus || 'No especificado')}</p>
+                <div class="detail-field-box">
+                  <span class="detail-label">Estado Civil</span>
+                  <span class="detail-val">${escapeHtml(employee.MaritalStatus || 'No especificado')}</span>
                 </div>
-                <div>
-                  <span class="panel-note">Cuenta de Usuario Kinetix</span>
-                  <p>${escapeHtml(employee.UserAccountEmail || 'Sin usuario vinculado')}</p>
+                <div class="detail-field-box">
+                  <span class="detail-label">Acceso al Sistema Kinetix</span>
+                  <span class="detail-val">
+                    ${employee.UserId ? `
+                      <span class="badge-pill badge-active">Activo: ${escapeHtml(employee.UserAccountEmail || '')}</span>
+                      <small style="display:block;margin-top:4px;color:var(--text-muted);">Rol en empresa: <strong>${escapeHtml(employee.UserRole || 'Empleado')}</strong></small>
+                      <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;">
+                        <button type="button" class="row-action" data-detail="user" data-id="${escapeHtml(employee.UserId)}" style="padding:2px 8px;font-size:11.5px;">Ver usuario →</button>
+                        <button type="button" class="row-action" data-action="open-link-user-modal" data-id="${employee.Id}" style="padding:2px 8px;font-size:11.5px;">Cambiar / desvincular</button>
+                      </div>
+                    ` : employee.InviteToken ? `
+                      <span class="badge-pill badge-warning">Invitación pendiente</span>
+                      <small style="display:block;margin-top:4px;color:var(--text-muted);">${escapeHtml(employee.UserAccountEmail || '')}</small>
+                      <div style="margin-top:6px;">
+                        <button type="button" class="row-action" data-action="open-link-user-modal" data-id="${employee.Id}" style="padding:2px 8px;font-size:11.5px;">Vincular usuario existente</button>
+                      </div>
+                    ` : `
+                      <span class="badge-pill badge-inactive">Sin acceso al sistema</span>
+                      <small style="display:block;margin-top:4px;color:var(--text-muted);">Registro laboral en RRHH sin usuario vinculado.</small>
+                      <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;">
+                        <button type="button" class="row-action" data-action="open-link-user-modal" data-id="${employee.Id}" style="padding:2px 8px;font-size:11.5px;">Vincular usuario existente</button>
+                        <button type="button" class="row-action" data-action="edit-employee" data-id="${employee.Id}" style="padding:2px 8px;font-size:11.5px;color:var(--primary,#0070f2);">Crear cuenta →</button>
+                      </div>
+                    `}
+                  </span>
                 </div>
               </div>
             </div>
@@ -159,18 +183,18 @@ export function employeeDetailView(employee) {
               <span class="panel-note">Ubicación física y comunicación</span>
             </div>
             <div class="panel-body">
-              <div class="form-grid">
-                <div>
-                  <span class="panel-note">Teléfono</span>
-                  <p>${escapeHtml(employee.Phone || 'No registrado')}</p>
+              <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap: 14px;">
+                <div class="detail-field-box">
+                  <span class="detail-label">Teléfono</span>
+                  <span class="detail-val">${escapeHtml(employee.Phone || 'No registrado')}</span>
                 </div>
-                <div>
-                  <span class="panel-note">Correo Electrónico</span>
-                  <p>${escapeHtml(employee.Email || 'No registrado')}</p>
+                <div class="detail-field-box">
+                  <span class="detail-label">Correo Electrónico</span>
+                  <span class="detail-val">${escapeHtml(employee.Email || 'No registrado')}</span>
                 </div>
-                <div class="field full">
-                  <span class="panel-note">Dirección de Residencia</span>
-                  <p>${escapeHtml(employee.Address || 'No especificada')}</p>
+                <div class="detail-field-box" style="grid-column: span 2;">
+                  <span class="detail-label">Dirección de Residencia</span>
+                  <span class="detail-val">${escapeHtml(employee.Address || 'No especificada')}</span>
                 </div>
               </div>
             </div>

@@ -53,7 +53,7 @@ export function createApprovalsRouter(ctx) {
     }
   });
 
-  // Request detail with history
+  // Request detail with history and entity summary
   router.get('/approvals/:id', async (req, res) => {
     try {
       const id = Number(req.params.id);
@@ -80,9 +80,10 @@ export function createApprovalsRouter(ctx) {
       }
 
       const currentStep = detail.steps.find(s => s.StepNumber === detail.CurrentStepNumber) || null;
-      const { steps, history, ...request } = detail;
+      const { steps, history, entitySummary, ...request } = detail;
       res.json({
         request,
+        entitySummary: entitySummary || null,
         currentStep: currentStep ? { ...currentStep, StepName: currentStep.Name } : null,
         steps,
         history
@@ -111,7 +112,6 @@ export function createApprovalsRouter(ctx) {
         isCompanyAdmin: isCompanyAdmin(req)
       });
 
-      // If workflow completed, execute entity-specific side effects
       if (outcome.isCompleted) {
         const reqItem = outcome.request;
         if (outcome.status === 'Aprobada') {
@@ -130,12 +130,12 @@ export function createApprovalsRouter(ctx) {
           } else if (reqItem.EntityName === 'HrAttendanceCorrections') {
             await pool.request()
               .input('id', reqItem.EntityId)
-              .query("UPDATE dbo.HrAttendanceCorrections SET Status = N'Rechazada' WHERE Id = @id;");
+              .query("UPDATE HrAttendanceCorrections SET Status = 'Rechazada' WHERE Id = @id;");
           }
         }
       }
 
-      await writeAudit(req, action === 'Aprobado' ? 'APPROVE' : 'REJECT', 'RRHH Aprobaciones', 'HrApprovalRequest', req.params.id, null, {
+      await writeAudit(req, action === 'Aprobado' ? 'APPROVE' : 'REJECT', 'RRHH Aprobaciones', 'HrApprovalRequest', req.params.id, outcome.request?.CompanyId || null, {
         context: `${action} solicitud #${req.params.id}. Comentarios: ${comments || 'Ninguno'}`
       });
 

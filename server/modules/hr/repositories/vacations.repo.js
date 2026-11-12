@@ -1,4 +1,3 @@
-import sql from 'mssql/msnodesqlv8.js';
 import { createApprovalRequest, getApprovalFlow } from './approvals.repo.js';
 
 function httpError(message, status = 400) {
@@ -31,8 +30,8 @@ export function countBusinessDays(startDate, endDate) {
  */
 export async function getEmployeeVacationBalance(pool, employeeId, year = new Date().getFullYear()) {
   const empRes = await pool.request()
-    .input('id', sql.Int, Number(employeeId))
-    .query('SELECT Id, CompanyId, HireDate FROM dbo.HrEmployees WHERE Id = @id;');
+    .input('id', Number(employeeId))
+    .query('SELECT Id, CompanyId, HireDate FROM HrEmployees WHERE Id = @id;');
   const emp = empRes.recordset[0];
   if (!emp) throw httpError('Empleado no encontrado.', 404);
 
@@ -44,14 +43,14 @@ export async function getEmployeeVacationBalance(pool, employeeId, year = new Da
   }
 
   const balRes = await pool.request()
-    .input('empId', sql.Int, emp.Id)
-    .input('year', sql.Int, year)
-    .query('SELECT * FROM dbo.HrVacationBalances WHERE EmployeeId = @empId AND PeriodYear = @year;');
+    .input('empId', emp.Id)
+    .input('year', year)
+    .query('SELECT * FROM HrVacationBalances WHERE EmployeeId = @empId AND PeriodYear = @year;');
 
   let balance = balRes.recordset[0];
 
   if (!balance) {
-    // Days earned by seniority (RD Labor Code Art. 177), configured per company in dbo.HrVacationPolicies.
+    // Days earned by seniority (RD Labor Code Art. 177), configured per company in HrVacationPolicies.
     // Fallback when no policy exists: 14 days from 1 year, 18 days from 5 years. Under 1 year is prorated.
     let daysGranted = 14.0;
     if (emp.HireDate) {
@@ -61,29 +60,26 @@ export async function getEmployeeVacationBalance(pool, employeeId, year = new Da
       } else {
         const fullYears = Math.floor(diffYears);
         const policyRes = await pool.request()
-          .input('companyId', sql.Int, emp.CompanyId)
-          .input('years', sql.Int, fullYears)
+          .input('companyId', emp.CompanyId)
+          .input('years', fullYears)
           .query(`
-            SELECT TOP 1 DaysGranted FROM dbo.HrVacationPolicies
+            SELECT DaysGranted FROM HrVacationPolicies
             WHERE CompanyId = @companyId AND MinYearsService <= @years
               AND (MaxYearsService IS NULL OR MaxYearsService >= @years)
-            ORDER BY MinYearsService DESC;
+            ORDER BY MinYearsService DESC LIMIT 1;
           `);
         const policyDays = policyRes.recordset[0]?.DaysGranted;
         daysGranted = policyDays != null ? Number(policyDays) : (diffYears >= 5.0 ? 18.0 : 14.0);
       }
     }
 
-    const insRes = await pool.request()
-      .input('empId', sql.Int, emp.Id)
-      .input('year', sql.Int, year)
-      .input('earned', sql.Decimal(5, 1), daysGranted)
-      .query(`
-        INSERT INTO dbo.HrVacationBalances (EmployeeId, PeriodYear, DaysEarned, DaysUsed, DaysPending)
-        OUTPUT INSERTED.*
-        VALUES (@empId, @year, @earned, 0.0, 0.0);
-      `);
-    balance = insRes.recordset[0];
+    balance = await pool.insert('HrVacationBalances', {
+      EmployeeId: emp.Id,
+      PeriodYear: year,
+      DaysEarned: daysGranted,
+      DaysUsed: 0.0,
+      DaysPending: 0.0
+    });
   }
 
   const available = Math.max(0, Number(balance.DaysEarned) - Number(balance.DaysUsed) - Number(balance.DaysPending));
@@ -128,8 +124,8 @@ export async function createVacationRequest(pool, {
   }
 
   const empRes = await pool.request()
-    .input('id', sql.Int, employeeId)
-    .query('SELECT CompanyId, Status FROM dbo.HrEmployees WHERE Id = @id;');
+    .input('id', employeeId)
+    .query('SELECT CompanyId, Status FROM HrEmployees WHERE Id = @id;');
   const emp = empRes.recordset[0];
   if (!emp || emp.CompanyId !== Number(companyId)) throw httpError('Empleado no encontrado en la empresa.', 404);
   if (emp.Status !== 'Activo') throw httpError(`Un empleado en estado "${emp.Status}" no puede solicitar vacaciones.`, 409);
@@ -141,37 +137,33 @@ export async function createVacationRequest(pool, {
   }
 
   const overlap = await pool.request()
-    .input('empId', sql.Int, employeeId)
-    .input('start', sql.Date, startDate)
-    .input('end', sql.Date, endDate)
+    .input('empId', employeeId)
+    .input('start', startDate)
+    .input('end', endDate)
     .query(`
-      SELECT TOP 1 Id FROM dbo.HrVacationRequests
-      WHERE EmployeeId = @empId AND Status IN (N'Pendiente', N'Aprobada') AND StartDate <= @end AND EndDate >= @start;
+      SELECT Id FROM HrVacationRequests
+      WHERE EmployeeId = @empId AND Status IN ('Pendiente', 'Aprobada') AND StartDate <= @end AND EndDate >= @start LIMIT 1;
     `);
   if (overlap.recordset[0]) throw httpError('Ya existe una solicitud de vacaciones pendiente o aprobada que se solapa con esas fechas.', 409);
 
   const flow = await getApprovalFlow(pool, companyId, 'Vacaciones');
   if (!flow || !flow.steps.length) throw httpError("No hay un flujo de aprobación configurado para solicitudes de tipo 'Vacaciones'.", 409);
 
-  const insRes = await pool.request()
-    .input('companyId', sql.Int, companyId)
-    .input('empId', sql.Int, employeeId)
-    .input('start', sql.Date, startDate)
-    .input('end', sql.Date, endDate)
-    .input('ret', sql.Date, returnDate || null)
-    .input('days', sql.Int, days)
-    .input('reason', sql.NVarChar(500), reason ? String(reason).slice(0, 500) : null)
-    .query(`
-      INSERT INTO dbo.HrVacationRequests (CompanyId, EmployeeId, StartDate, EndDate, ReturnDate, DaysRequested, Reason, Status)
-      OUTPUT INSERTED.Id, INSERTED.StartDate, INSERTED.EndDate, INSERTED.DaysRequested, INSERTED.Status
-      VALUES (@companyId, @empId, @start, @end, @ret, @days, @reason, N'Pendiente');
-    `);
-  const vacationRequest = insRes.recordset[0];
+  const vacationRequest = await pool.insert('HrVacationRequests', {
+    CompanyId: companyId,
+    EmployeeId: employeeId,
+    StartDate: startDate,
+    EndDate: endDate,
+    ReturnDate: returnDate || null,
+    DaysRequested: days,
+    Reason: reason ? String(reason).slice(0, 500) : null,
+    Status: 'Pendiente'
+  }, { returning: 'Id, StartDate, EndDate, DaysRequested, Status' });
 
   await pool.request()
-    .input('id', sql.Int, balance.Id)
-    .input('days', sql.Decimal(5, 1), days)
-    .query(`UPDATE dbo.HrVacationBalances SET DaysPending = DaysPending + @days, UpdatedAt = SYSUTCDATETIME() WHERE Id = @id;`);
+    .input('id', balance.Id)
+    .input('days', days)
+    .query(`UPDATE HrVacationBalances SET DaysPending = DaysPending + @days, UpdatedAt = now() WHERE Id = @id;`);
 
   let approval;
   try {
@@ -184,16 +176,15 @@ export async function createVacationRequest(pool, {
     });
   } catch (err) {
     // Compensate: do not leave a dangling request holding days
-    await pool.request().input('id', sql.Int, vacationRequest.Id).query('DELETE FROM dbo.HrVacationRequests WHERE Id = @id;');
-    await pool.request().input('id', sql.Int, balance.Id).input('days', sql.Decimal(5, 1), days)
-      .query(`UPDATE dbo.HrVacationBalances SET DaysPending = CASE WHEN DaysPending >= @days THEN DaysPending - @days ELSE 0 END WHERE Id = @id;`);
+    await pool.delete('HrVacationRequests', vacationRequest.Id);
+    await pool.request().input('id', balance.Id).input('days', days)
+      .query(`UPDATE HrVacationBalances SET DaysPending = CASE WHEN DaysPending >= @days THEN DaysPending - @days ELSE 0 END WHERE Id = @id;`);
     throw err;
   }
 
-  await pool.request()
-    .input('id', sql.Int, vacationRequest.Id)
-    .input('appId', sql.Int, approval.Id)
-    .query('UPDATE dbo.HrVacationRequests SET ApprovalRequestId = @appId WHERE Id = @id;');
+  await pool.update('HrVacationRequests', vacationRequest.Id, {
+    ApprovalRequestId: approval.Id
+  }, { returning: false });
 
   return { vacationRequest, approval };
 }
@@ -202,45 +193,42 @@ export async function createVacationRequest(pool, {
  * Applies vacation approval
  */
 export async function applyVacationApproval(pool, vacationRequestId) {
-  const reqRes = await pool.request()
-    .input('id', sql.Int, vacationRequestId)
-    .query('SELECT * FROM dbo.HrVacationRequests WHERE Id = @id;');
-  const req = reqRes.recordset[0];
+  const req = await pool.findById('HrVacationRequests', vacationRequestId);
   if (!req || req.Status === 'Aprobada') return;
 
   const year = new Date(req.StartDate).getUTCFullYear();
 
   await pool.request()
-    .input('empId', sql.Int, req.EmployeeId)
-    .input('year', sql.Int, year)
-    .input('days', sql.Decimal(5, 1), req.DaysRequested)
+    .input('empId', req.EmployeeId)
+    .input('year', year)
+    .input('days', req.DaysRequested)
     .query(`
-      UPDATE dbo.HrVacationBalances
+      UPDATE HrVacationBalances
       SET DaysPending = CASE WHEN DaysPending >= @days THEN DaysPending - @days ELSE 0 END,
           DaysUsed = DaysUsed + @days,
-          UpdatedAt = SYSUTCDATETIME()
+          UpdatedAt = now()
       WHERE EmployeeId = @empId AND PeriodYear = @year;
     `);
 
   await pool.request()
-    .input('id', sql.Int, vacationRequestId)
-    .query("UPDATE dbo.HrVacationRequests SET Status = N'Aprobada' WHERE Id = @id;");
+    .input('id', vacationRequestId)
+    .query("UPDATE HrVacationRequests SET Status = 'Aprobada' WHERE Id = @id;");
 
   // Mark attendance for the working days of the vacation (never overwrite real punches)
   for (const { dateStr, dow } of eachDate(req.StartDate, req.EndDate)) {
     if (dow === 0 || dow === 6) continue;
     await pool.request()
-      .input('companyId', sql.Int, req.CompanyId)
-      .input('empId', sql.Int, req.EmployeeId)
-      .input('date', sql.Date, dateStr)
-      .input('notes', sql.NVarChar(500), `Vacaciones aprobadas (Solicitud #${req.Id})`)
+      .input('companyId', req.CompanyId)
+      .input('empId', req.EmployeeId)
+      .input('date', dateStr)
+      .input('notes', `Vacaciones aprobadas (Solicitud #${req.Id})`)
       .query(`
-        IF NOT EXISTS (SELECT 1 FROM dbo.HrAttendance WHERE EmployeeId = @empId AND WorkDate = @date)
-          INSERT INTO dbo.HrAttendance (CompanyId, EmployeeId, WorkDate, Status, Notes)
-          VALUES (@companyId, @empId, @date, N'Vacaciones', @notes);
-        ELSE
-          UPDATE dbo.HrAttendance SET Status = N'Vacaciones', Notes = @notes
-          WHERE EmployeeId = @empId AND WorkDate = @date AND CheckInTime IS NULL;
+        INSERT INTO HrAttendance (CompanyId, EmployeeId, WorkDate, Status, Notes)
+        VALUES (@companyId, @empId, @date, 'Vacaciones', @notes)
+        ON CONFLICT (EmployeeId, WorkDate) DO UPDATE SET
+          Status = 'Vacaciones',
+          Notes = EXCLUDED.Notes
+        WHERE HrAttendance.CheckInTime IS NULL;
       `);
   }
 }
@@ -250,28 +238,28 @@ export async function applyVacationApproval(pool, vacationRequestId) {
  */
 export async function rejectVacationRequest(pool, vacationRequestId, rejectionReason = null) {
   const reqRes = await pool.request()
-    .input('id', sql.Int, vacationRequestId)
-    .query('SELECT * FROM dbo.HrVacationRequests WHERE Id = @id;');
+    .input('id', vacationRequestId)
+    .query('SELECT * FROM HrVacationRequests WHERE Id = @id;');
   const req = reqRes.recordset[0];
   if (!req || req.Status === 'Rechazada') return;
 
   const year = new Date(req.StartDate).getUTCFullYear();
 
   await pool.request()
-    .input('empId', sql.Int, req.EmployeeId)
-    .input('year', sql.Int, year)
-    .input('days', sql.Decimal(5, 1), req.DaysRequested)
+    .input('empId', req.EmployeeId)
+    .input('year', year)
+    .input('days', req.DaysRequested)
     .query(`
-      UPDATE dbo.HrVacationBalances
+      UPDATE HrVacationBalances
       SET DaysPending = CASE WHEN DaysPending >= @days THEN DaysPending - @days ELSE 0 END,
-          UpdatedAt = SYSUTCDATETIME()
+          UpdatedAt = now()
       WHERE EmployeeId = @empId AND PeriodYear = @year;
     `);
 
   await pool.request()
-    .input('id', sql.Int, vacationRequestId)
-    .input('reason', sql.NVarChar(500), rejectionReason || null)
-    .query("UPDATE dbo.HrVacationRequests SET Status = N'Rechazada', RejectionReason = @reason WHERE Id = @id;");
+    .input('id', vacationRequestId)
+    .input('reason', rejectionReason || null)
+    .query("UPDATE HrVacationRequests SET Status = 'Rechazada', RejectionReason = @reason WHERE Id = @id;");
 }
 
 /**
@@ -292,33 +280,33 @@ export async function listVacationRequests(pool, {
 
   if (employeeId) where += ` AND v.EmployeeId = @empId`;
   if (status) where += ` AND v.Status = @status`;
-  if (visibleFor) where += ` AND v.EmployeeId IN (SELECT EmployeeId FROM dbo.fn_HrVisibleEmployees(@visUser, 0, 0))`;
+  if (visibleFor) where += ` AND v.EmployeeId IN (SELECT EmployeeId FROM fn_HrVisibleEmployees(@visUser, FALSE, FALSE))`;
 
-  const req = pool.request().input('companyId', sql.Int, companyId);
-  if (employeeId) req.input('empId', sql.Int, Number(employeeId));
-  if (status) req.input('status', sql.NVarChar(30), status);
-  if (visibleFor) req.input('visUser', sql.NVarChar(450), visibleFor.userId);
+  const req = pool.request().input('companyId', companyId);
+  if (employeeId) req.input('empId', Number(employeeId));
+  if (status) req.input('status', status);
+  if (visibleFor) req.input('visUser', visibleFor.userId);
 
-  const countQuery = `SELECT COUNT(*) AS total FROM dbo.HrVacationRequests v ${where};`;
+  const countQuery = `SELECT COUNT(*) AS total FROM HrVacationRequests v ${where};`;
 
   const dataQuery = `
     SELECT v.Id, v.CompanyId, v.EmployeeId, v.StartDate, v.EndDate, v.ReturnDate,
            v.DaysRequested, v.Reason, v.ApprovalRequestId, v.Status, v.RejectionReason, v.CreatedAt,
-           CONCAT(e.FirstName, N' ', e.LastName) AS EmployeeName,
+           CONCAT(e.FirstName, ' ', e.LastName) AS EmployeeName,
            e.EmployeeCode,
            d.Name AS DepartmentName,
            p.Title AS PositionTitle
-    FROM dbo.HrVacationRequests v
-    JOIN dbo.HrEmployees e ON e.Id = v.EmployeeId
-    LEFT JOIN dbo.HrDepartments d ON d.Id = e.DepartmentId
-    LEFT JOIN dbo.HrPositions p ON p.Id = e.PositionId
+    FROM HrVacationRequests v
+    JOIN HrEmployees e ON e.Id = v.EmployeeId
+    LEFT JOIN HrDepartments d ON d.Id = e.DepartmentId
+    LEFT JOIN HrPositions p ON p.Id = e.PositionId
     ${where}
     ORDER BY v.CreatedAt DESC
-    OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY;
+    LIMIT @pageSize OFFSET @offset;
   `;
 
-  req.input('offset', sql.Int, offset);
-  req.input('pageSize', sql.Int, pageSize);
+  req.input('offset', offset);
+  req.input('pageSize', pageSize);
 
   const [countRes, dataRes] = await Promise.all([
     req.query(countQuery),
@@ -338,38 +326,38 @@ export async function getVacationCalendar(pool, { companyId, year, month = null,
   const to = month ? new Date(Date.UTC(y, Number(month), 0)) : new Date(Date.UTC(y, 11, 31));
 
   const req = pool.request()
-    .input('companyId', sql.Int, companyId)
-    .input('from', sql.Date, from.toISOString().slice(0, 10))
-    .input('to', sql.Date, to.toISOString().slice(0, 10));
+    .input('companyId', companyId)
+    .input('from', from.toISOString().slice(0, 10))
+    .input('to', to.toISOString().slice(0, 10));
 
   let extra = '';
   if (departmentId) {
     extra += ' AND e.DepartmentId = @deptId';
-    req.input('deptId', sql.Int, Number(departmentId));
+    req.input('deptId', Number(departmentId));
   }
   if (visibleFor) {
-    extra += ' AND e.Id IN (SELECT EmployeeId FROM dbo.fn_HrVisibleEmployees(@visUser, 0, 0))';
-    req.input('visUser', sql.NVarChar(450), visibleFor.userId);
+    extra += ' AND e.Id IN (SELECT EmployeeId FROM fn_HrVisibleEmployees(@visUser, FALSE, FALSE))';
+    req.input('visUser', visibleFor.userId);
   }
 
   const result = await req.query(`
     SELECT * FROM (
-      SELECT v.Id, N'Vacaciones' AS type, v.EmployeeId,
-             CONCAT(e.FirstName, N' ', e.LastName) AS employeeName, d.Name AS departmentName,
+      SELECT v.Id, 'Vacaciones' AS type, v.EmployeeId,
+             CONCAT(e.FirstName, ' ', e.LastName) AS employeeName, d.Name AS departmentName,
              v.StartDate AS startDate, v.EndDate AS endDate, CAST(v.DaysRequested AS DECIMAL(6,2)) AS days
-      FROM dbo.HrVacationRequests v
-      JOIN dbo.HrEmployees e ON e.Id = v.EmployeeId
-      LEFT JOIN dbo.HrDepartments d ON d.Id = e.DepartmentId
-      WHERE v.CompanyId = @companyId AND v.Status = N'Aprobada' AND v.StartDate <= @to AND v.EndDate >= @from ${extra}
+      FROM HrVacationRequests v
+      JOIN HrEmployees e ON e.Id = v.EmployeeId
+      LEFT JOIN HrDepartments d ON d.Id = e.DepartmentId
+      WHERE v.CompanyId = @companyId AND v.Status = 'Aprobada' AND v.StartDate <= @to AND v.EndDate >= @from ${extra}
       UNION ALL
       SELECT l.Id, lt.Name AS type, l.EmployeeId,
-             CONCAT(e.FirstName, N' ', e.LastName), d.Name,
+             CONCAT(e.FirstName, ' ', e.LastName), d.Name,
              l.StartDate, l.EndDate, l.Duration
-      FROM dbo.HrLeaveRequests l
-      JOIN dbo.HrLeaveTypes lt ON lt.Id = l.LeaveTypeId
-      JOIN dbo.HrEmployees e ON e.Id = l.EmployeeId
-      LEFT JOIN dbo.HrDepartments d ON d.Id = e.DepartmentId
-      WHERE l.CompanyId = @companyId AND l.Status = N'Aprobada' AND l.StartDate <= @to AND l.EndDate >= @from ${extra}
+      FROM HrLeaveRequests l
+      JOIN HrLeaveTypes lt ON lt.Id = l.LeaveTypeId
+      JOIN HrEmployees e ON e.Id = l.EmployeeId
+      LEFT JOIN HrDepartments d ON d.Id = e.DepartmentId
+      WHERE l.CompanyId = @companyId AND l.Status = 'Aprobada' AND l.StartDate <= @to AND l.EndDate >= @from ${extra}
     ) AS ev
     ORDER BY ev.startDate ASC;
   `);

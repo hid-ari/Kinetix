@@ -1,15 +1,20 @@
-import { state } from '../../core/state.js';
+import { state, hasPermission } from '../../core/state.js';
 import { escapeHtml, displayDate, badge } from '../../components/utils.js';
+import { breadcrumb, pageHeader } from '../../components/ui.js';
 
 export function financeBankingView() {
+  const canCreate = hasPermission('Finanzas', 'Registrar transacciones');
   return `
+    ${breadcrumb([['finance', 'Finanzas'], ['finance-banking', 'Conciliación Bancaria']])}
+    ${pageHeader('Conciliación Bancaria', 'Verificación de extractos y movimientos en cuentas bancarias registradas.', canCreate ? '<button class="primary" data-action="new-bank">＋ Registrar movimiento</button>' : '')}
+
     <div class="panel">
       <div class="panel-head">
         <div>
-          <h2>Conciliación Bancaria</h2>
-          <p class="panel-note">Verificación de extractos y movimientos en cuentas bancarias</p>
+          <h2>Extractos y Movimientos</h2>
+          <p class="panel-note">Trazabilidad de fondos y balances</p>
         </div>
-        <button class="primary" data-action="new-bank">＋ Registrar movimiento</button>
+        <span class="panel-note">${state.finance.bank.length} movimientos</span>
       </div>
       <div class="table-wrap">
         <table>

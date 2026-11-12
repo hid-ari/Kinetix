@@ -21,7 +21,7 @@ export function positionsView() {
               <th>Departamento</th>
               <th>Nivel Jerárquico</th>
               <th>Banda Salarial (DOP)</th>
-              <th>Colaboradores</th>
+              <th>Empleados</th>
               <th>Estado</th>
               <th style="text-align:right;">Acciones</th>
             </tr>

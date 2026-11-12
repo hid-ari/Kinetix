@@ -1,0 +1,312 @@
+/* ==========================================================================
+   AUTH VIEW — SAP FIORI HORIZON LOGIN & ACCESS PORTAL
+   Diseño compacto de dos columnas: identidad corporativa sobria + formulario Fiori
+   ========================================================================== */
+
+.login-shell {
+  min-height: 100vh;
+  background-color: #f5f7fa;
+  background-image:
+    radial-gradient(at 0% 0%, rgba(0, 112, 242, 0.05) 0px, transparent 45%),
+    radial-gradient(at 100% 100%, rgba(37, 99, 235, 0.04) 0px, transparent 45%);
+}
+
+.login-shell-bar {
+  padding: 0 28px;
+}
+
+.login-shell-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #475569;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 5px 12px;
+  border-radius: 999px;
+}
+
+.login-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #16a34a;
+  box-shadow: 0 0 6px rgba(22, 163, 74, 0.5);
+}
+
+/* ── Main Viewport & Compact Split Container ───────────────── */
+.login-viewport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+  background: transparent;
+}
+
+.login-card-split {
+  width: 100%;
+  max-width: 820px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-top: 4px solid #0070f2;
+  border-radius: 16px;
+  box-shadow: 0 12px 28px -6px rgba(15, 23, 42, 0.07), 0 4px 10px -2px rgba(15, 23, 42, 0.03);
+  display: grid;
+  grid-template-columns: 310px 1fr;
+  overflow: hidden;
+  animation: modalPop 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Left Brand Column (Sober & Compact) ───────────────────── */
+.login-brand-pane {
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  border-right: 1px solid #e2e8f0;
+  padding: 38px 32px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.login-brand-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin: auto 0;
+}
+
+.login-brand-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid #dbeafe;
+  box-shadow: 0 4px 12px rgba(0, 112, 242, 0.08);
+  padding: 8px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 18px;
+}
+
+.login-brand-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.login-brand-identity h1 {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 800;
+  color: #0070f2;
+  letter-spacing: -0.03em;
+  margin: 0 0 6px;
+}
+
+.login-brand-identity p {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #475569;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.login-brand-footer {
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.login-brand-footer small {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+/* ── Right Form Column ─────────────────────────────────────── */
+.login-form-pane {
+  padding: 38px 40px;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.login-box {
+  width: 100%;
+}
+
+.login-header-group {
+  margin-bottom: 22px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.login-header-group .eyebrow {
+  color: #0070f2;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  font-weight: 800;
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 5px;
+}
+
+.login-box h2 {
+  font-size: 22px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 5px;
+  letter-spacing: -0.02em;
+}
+
+.login-header-group p {
+  color: #64748b;
+  font-size: 13px;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.login-box form {
+  display: grid;
+  gap: 16px;
+}
+
+.login-box .field label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.login-password-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.login-password-label-row label {
+  margin: 0;
+}
+
+.login-password-label-row .link-btn {
+  font-size: 11.5px;
+  color: #0070f2;
+  padding: 0;
+}
+
+.login-password-label-row .link-btn:hover {
+  text-decoration: underline;
+}
+
+.login-box .field input {
+  padding: 10px 13px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  font-size: 13.5px;
+  color: #0f172a;
+  transition: all 0.16s ease;
+}
+
+.login-box .field input:focus {
+  background: #ffffff;
+  border-color: #0070f2;
+  box-shadow: 0 0 0 3px rgba(0, 112, 242, 0.14);
+}
+
+.login-options {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.login-options .check {
+  margin: 0;
+  font-size: 12.5px;
+  color: #475569;
+  font-weight: 500;
+}
+
+.login-submit {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 11px 18px;
+  font-size: 13.5px;
+  font-weight: 700;
+  border-radius: 9px;
+  background: #0070f2;
+  box-shadow: 0 2px 8px rgba(0, 112, 242, 0.28);
+}
+
+.login-submit:hover {
+  background: #005fcc;
+  box-shadow: 0 6px 16px rgba(0, 112, 242, 0.35);
+}
+
+.login-submit svg {
+  transition: transform 0.18s ease;
+}
+
+.login-submit:hover svg {
+  transform: translateX(3px);
+}
+
+/* ── Responsive Adjustments ────────────────────────────────── */
+@media (max-width: 760px) {
+  .login-card-split {
+    grid-template-columns: 1fr;
+    max-width: 440px;
+  }
+  .login-brand-pane {
+    border-right: none;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 24px 28px;
+    gap: 14px;
+  }
+  .login-brand-identity {
+    flex-direction: row;
+    align-items: center;
+    gap: 14px;
+    margin: 0;
+  }
+  .login-brand-logo {
+    width: 44px;
+    height: 44px;
+    margin-bottom: 0;
+  }
+  .login-brand-identity h1 {
+    font-size: 22px;
+    margin: 0;
+  }
+  .login-brand-identity p {
+    display: none;
+  }
+  .login-brand-footer {
+    display: none;
+  }
+  .login-form-pane {
+    padding: 28px 24px;
+  }
+}
+
+@media (max-width: 600px) {
+  .login-shell-bar {
+    padding: 0 16px;
+  }
+  .login-shell-status {
+    display: none;
+  }
+  .login-viewport {
+    padding: 20px 14px;
+  }
+}

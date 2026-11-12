@@ -1,12 +1,11 @@
-import sql from 'mssql/msnodesqlv8.js';
 
 export async function getCatalogs(pool, companyId) {
   const result = await pool.request()
-    .input('companyId', sql.Int, companyId || null)
+    .input('companyId', companyId || null)
     .query(`
       SELECT Id, CompanyId, CatalogType, Code, Name, SortOrder, IsActive
-      FROM dbo.HrCatalogItems
-      WHERE IsActive = 1
+      FROM HrCatalogItems
+      WHERE IsActive = TRUE
         AND (CompanyId IS NULL OR CompanyId = @companyId)
       ORDER BY CatalogType, SortOrder, Name;
     `);
@@ -34,18 +33,8 @@ export async function getCatalogs(pool, companyId) {
 }
 
 export async function getHrSettings(pool, companyId) {
-  const result = await pool.request()
-    .input('companyId', sql.Int, companyId)
-    .query(`
-      SELECT CompanyId, EmployeeCodePrefix, EmployeeCodeDigits, NextEmployeeNumber,
-             AllowManualEmployeeCode, BirthdaysEnabled
-      FROM dbo.HrSettings
-      WHERE CompanyId = @companyId;
-    `);
-
-  if (result.recordset[0]) {
-    return result.recordset[0];
-  }
+  const row = await pool.findOne('HrSettings', { CompanyId: companyId });
+  if (row) return row;
 
   // Defaults if not configured
   return {
@@ -60,23 +49,22 @@ export async function getHrSettings(pool, companyId) {
 
 export async function updateHrSettings(pool, companyId, settings, userId) {
   await pool.request()
-    .input('companyId', sql.Int, companyId)
-    .input('prefix', sql.NVarChar(10), settings.prefix || 'EMP-')
-    .input('digits', sql.TinyInt, settings.digits || 5)
-    .input('allowManual', sql.Bit, !!settings.allowManual)
-    .input('birthdays', sql.Bit, settings.birthdays !== false)
-    .input('userId', sql.NVarChar(450), userId || null)
+    .input('companyId', companyId)
+    .input('prefix', settings.prefix || 'EMP-')
+    .input('digits', settings.digits || 5)
+    .input('allowManual', !!settings.allowManual)
+    .input('birthdays', settings.birthdays !== false)
+    .input('userId', userId || null)
     .query(`
-      MERGE dbo.HrSettings AS target
-      USING (SELECT @companyId AS CompanyId) AS source
-      ON target.CompanyId = source.CompanyId
-      WHEN MATCHED THEN
-        UPDATE SET EmployeeCodePrefix = @prefix, EmployeeCodeDigits = @digits,
-                   AllowManualEmployeeCode = @allowManual, BirthdaysEnabled = @birthdays,
-                   UpdatedAt = SYSUTCDATETIME(), UpdatedBy = @userId
-      WHEN NOT MATCHED THEN
-        INSERT (CompanyId, EmployeeCodePrefix, EmployeeCodeDigits, NextEmployeeNumber, AllowManualEmployeeCode, BirthdaysEnabled, UpdatedBy)
-        VALUES (@companyId, @prefix, @digits, 1, @allowManual, @birthdays, @userId);
+      INSERT INTO HrSettings (CompanyId, EmployeeCodePrefix, EmployeeCodeDigits, NextEmployeeNumber, AllowManualEmployeeCode, BirthdaysEnabled, UpdatedBy)
+      VALUES (@companyId, @prefix, @digits, 1, @allowManual, @birthdays, @userId)
+      ON CONFLICT (CompanyId) DO UPDATE SET
+        EmployeeCodePrefix = EXCLUDED.EmployeeCodePrefix,
+        EmployeeCodeDigits = EXCLUDED.EmployeeCodeDigits,
+        AllowManualEmployeeCode = EXCLUDED.AllowManualEmployeeCode,
+        BirthdaysEnabled = EXCLUDED.BirthdaysEnabled,
+        UpdatedAt = now(),
+        UpdatedBy = EXCLUDED.UpdatedBy;
     `);
 }
 
@@ -84,13 +72,13 @@ export async function updateHrSettings(pool, companyId, settings, userId) {
  * Generates next unique employee code atomically inside an existing transaction
  */
 export async function generateNextEmployeeCode(transaction, companyId) {
-  const req = new sql.Request(transaction);
+  const req = transaction.request();
   const result = await req
-    .input('companyId', sql.Int, companyId)
+    .input('companyId', companyId)
     .query(`
       SELECT EmployeeCodePrefix, EmployeeCodeDigits, NextEmployeeNumber
-      FROM dbo.HrSettings WITH (UPDLOCK, HOLDLOCK)
-      WHERE CompanyId = @companyId;
+      FROM HrSettings
+      WHERE CompanyId = @companyId FOR UPDATE;
     `);
 
   let prefix = 'EMP-';
@@ -102,14 +90,12 @@ export async function generateNextEmployeeCode(transaction, companyId) {
     digits = result.recordset[0].EmployeeCodeDigits;
     nextNum = result.recordset[0].NextEmployeeNumber;
 
-    await new sql.Request(transaction)
-      .input('companyId', sql.Int, companyId)
-      .query('UPDATE dbo.HrSettings SET NextEmployeeNumber = NextEmployeeNumber + 1 WHERE CompanyId = @companyId;');
+    await transaction.request()
+      .input('companyId', companyId)
+      .query('UPDATE HrSettings SET NextEmployeeNumber = NextEmployeeNumber + 1 WHERE CompanyId = @companyId;');
   } else {
     // Insert default settings with Next = 2
-    await new sql.Request(transaction)
-      .input('companyId', sql.Int, companyId)
-      .query('INSERT INTO dbo.HrSettings (CompanyId, NextEmployeeNumber) VALUES (@companyId, 2);');
+    await transaction.insert('HrSettings', { CompanyId: companyId, NextEmployeeNumber: 2 });
   }
 
   const padded = String(nextNum).padStart(digits, '0');

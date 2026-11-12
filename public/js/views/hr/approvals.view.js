@@ -1,5 +1,6 @@
 import { state } from '../../core/state.js';
 import { escapeHtml, initials } from '../../components/utils.js';
+import { breadcrumb } from '../../components/ui.js';
 
 export function approvalsView() {
   const pending = state.hr.pendingApprovals || [];
@@ -36,14 +37,19 @@ export function approvalsView() {
 
   const getFlowTypeIcon = (code) => {
     switch (code) {
-      case 'Vacaciones': return '🏖️';
-      case 'Permiso': return '📋';
-      case 'CorreccionAsistencia': return '⏰';
-      default: return '📄';
+      case 'Vacaciones':
+        return '<svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;color:#0284c7;display:inline-block;vertical-align:middle;"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/></svg>';
+      case 'Permiso':
+        return '<svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;color:#d97706;display:inline-block;vertical-align:middle;"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/><path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/></svg>';
+      case 'CorreccionAsistencia':
+        return '<svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;color:#7c3aed;display:inline-block;vertical-align:middle;"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>';
+      default:
+        return '<svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;color:#64748b;display:inline-block;vertical-align:middle;"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"/></svg>';
     }
   };
 
   return `
+    ${breadcrumb([['dashboard', 'Inicio'], ['hr-dashboard', 'Recursos Humanos'], ['hr-approvals', 'Aprobaciones']])}
     <div class="hr-view">
       <!-- Encabezado de Aprobaciones -->
       <div class="view-header">
@@ -157,7 +163,7 @@ export function approvalsView() {
                     </td>
                   </tr>
                 ` : pending.map(req => {
-                  const empName = req.RequesterName || 'Colaborador';
+                  const empName = req.RequesterName || 'Empleado';
                   const empInit = initials(empName);
                   return `
                   <tr>
@@ -173,7 +179,7 @@ export function approvalsView() {
                         <div class="emp-avatar-sm">${escapeHtml(empInit)}</div>
                         <div class="emp-cell-info">
                           <strong>${escapeHtml(empName)}</strong>
-                          <small>${escapeHtml(req.RequesterPosition || req.RequesterDept || 'Colaborador')}</small>
+                          <small>${escapeHtml(req.RequesterPosition || req.RequesterDept || 'Empleado')}</small>
                         </div>
                       </div>
                     </td>

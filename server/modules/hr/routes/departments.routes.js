@@ -74,8 +74,9 @@ export function createDepartmentsRouter(ctx) {
       res.status(201).json(created);
     } catch (err) {
       console.error('Error creating department:', err);
-      res.status(err.number === 2627 ? 409 : (err.status || 500)).json({
-        message: err.number === 2627 ? 'Ya existe un departamento con ese código en esta empresa.' : (err.message || 'Error al crear departamento.')
+      const isDuplicate = err.code === '23505';
+      res.status(isDuplicate ? 409 : (err.status || 500)).json({
+        message: isDuplicate ? 'Ya existe un departamento con ese código en esta empresa.' : (err.message || 'Error al crear departamento.')
       });
     }
   });
@@ -116,8 +117,9 @@ export function createDepartmentsRouter(ctx) {
       res.json(updated);
     } catch (err) {
       console.error('Error updating department:', err);
-      res.status(err.number === 2627 ? 409 : (err.status || 500)).json({
-        message: err.number === 2627 ? 'Ya existe un departamento con ese código en esta empresa.' : (err.message || 'Error al actualizar departamento.')
+      const isDuplicate = err.code === '23505';
+      res.status(isDuplicate ? 409 : (err.status || 500)).json({
+        message: isDuplicate ? 'Ya existe un departamento con ese código en esta empresa.' : (err.message || 'Error al actualizar departamento.')
       });
     }
   });

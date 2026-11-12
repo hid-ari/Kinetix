@@ -3,15 +3,16 @@ import { escapeHtml } from '../../components/utils.js';
 import { breadcrumb, pageHeader } from '../../components/ui.js';
 
 export function employeeForm(employee = null) {
-  const isEdit = !!employee;
+  const isEdit = Boolean(state.hr.editMode && employee && employee.Id);
   const title = isEdit ? `Editar · ${employee.FirstName} ${employee.LastName}` : 'Nuevo Empleado';
-  const desc = isEdit ? 'Actualiza los datos personales, de contacto y contractuales del colaborador.' : 'Registra un nuevo colaborador en la organización con su expediente digital.';
+  const desc = isEdit ? 'Actualiza los datos personales, de contacto y contractuales del empleado.' : 'Registra un nuevo empleado en la organización con su expediente digital.';
 
   const depts = state.hr.departments || [];
   const positions = state.hr.positions || [];
   const branches = state.branches || [];
   const users = state.users || [];
   const employees = state.hr.employees || [];
+  const roles = state.roles || [];
 
   const catalogs = state.hr.catalogs || {};
   const contractTypes = catalogs.ContractType || [];
@@ -29,8 +30,12 @@ export function employeeForm(employee = null) {
     </option>
   `).join('');
 
+  const selectedBranchId = employee?.BranchId != null
+    ? employee.BranchId
+    : (branches.length === 1 ? branches[0].id : '');
+
   const branchOptions = branches.map(b => `
-    <option value="${b.id}" ${employee?.BranchId === b.id ? 'selected' : ''}>
+    <option value="${b.id}" ${String(selectedBranchId) === String(b.id) ? 'selected' : ''}>
       ${escapeHtml(b.name)}
     </option>
   `).join('');
@@ -55,9 +60,29 @@ export function employeeForm(employee = null) {
     </option>
   `).join('');
 
-  const userOptions = users.map(u => `
-    <option value="${escapeHtml(u.id)}" ${employee?.UserId === u.id ? 'selected' : ''}>
-      ${escapeHtml(u.name)} (${escapeHtml(u.email)})
+  const availableUsers = users.filter(u =>
+    !u.employeeId || (employee?.UserId && String(u.id) === String(employee.UserId))
+  );
+
+  const userOptions = availableUsers.map(u => `
+    <option value="${escapeHtml(u.id)}" ${String(employee?.UserId || '') === String(u.id) ? 'selected' : ''}>
+      ${escapeHtml(u.name)} (${escapeHtml(u.email)})${u.role ? ` · ${escapeHtml(u.role)}` : ''}
+    </option>
+  `).join('');
+
+  const initialAccessMode = employee?.UserId
+    ? 'link_existing'
+    : (employee?.InviteToken ? 'invite' : 'none');
+
+  const roleList = (roles.length ? roles : [
+    { name: 'Company Admin' },
+    { name: 'Supervisor' },
+    { name: 'Empleado' }
+  ]).filter(r => r.name !== 'Super Admin');
+
+  const roleOptions = roleList.map(r => `
+    <option value="${escapeHtml(r.name)}" ${(employee?.UserRole === r.name || (!employee?.UserRole && r.name === 'Empleado')) ? 'selected' : ''}>
+      ${escapeHtml(r.name)}
     </option>
   `).join('');
 
@@ -85,15 +110,15 @@ export function employeeForm(employee = null) {
             <div class="field">
               <label>Tipo de Documento *</label>
               <select name="documentType" id="emp-doc-type">
-                <option value="Cedula" ${employee?.DocumentType === 'Cedula' ? 'selected' : ''}>Cédula de Identidad (Rep. Dom.)</option>
+                <option value="Cedula" ${employee?.DocumentType === 'Cedula' || !employee?.DocumentType ? 'selected' : ''}>Cédula de Identidad (Rep. Dom.)</option>
                 <option value="Pasaporte" ${employee?.DocumentType === 'Pasaporte' ? 'selected' : ''}>Pasaporte</option>
                 <option value="Otro" ${employee?.DocumentType === 'Otro' ? 'selected' : ''}>Otro Documento</option>
               </select>
             </div>
             <div class="field">
               <label>Número de Documento *</label>
-              <input required name="documentNumber" id="emp-doc-num" placeholder="001-1234567-8 o 11 dígitos" value="${escapeHtml(employee?.DocumentNumber || '')}">
-              <span class="helper" id="emp-doc-helper">Validación algorítmica de cédula dominicana (Luhn).</span>
+              <input required name="documentNumber" id="emp-doc-num" placeholder="402-0000001-2" value="${escapeHtml(employee?.DocumentNumber || '')}" autocomplete="off">
+              <span class="helper" id="emp-doc-helper">Formato automático: 000-0000000-0 (11 dígitos con validación Luhn).</span>
             </div>
             <div class="field">
               <label>Fecha de Nacimiento</label>
@@ -150,9 +175,10 @@ export function employeeForm(employee = null) {
           <h3>3. Ubicación Organizacional y Contrato</h3>
           <div class="form-grid">
             <div class="field">
-              <label>Sucursal / Sede</label>
+              <label>Sucursal</label>
               <select name="branchId">
-                <option value="">Sede Principal / General</option>
+                ${branches.length === 0 ? '<option value="">Sin sucursales registradas</option>' : ''}
+                ${branches.length > 1 ? '<option value="">Seleccione una sucursal...</option>' : ''}
                 ${branchOptions}
               </select>
             </div>
@@ -205,9 +231,9 @@ export function employeeForm(employee = null) {
           </div>
         </div>
 
-        <!-- Section 4: Compensación y Acceso -->
+        <!-- Section 4: Compensación Laboral -->
         <div class="form-section">
-          <h3>4. Compensación y Vinculación de Usuario</h3>
+          <h3>4. Compensación Laboral</h3>
           <div class="form-grid">
             <div class="field">
               <label>Salario Base Mensual (DOP)</label>
@@ -221,21 +247,64 @@ export function employeeForm(employee = null) {
                 <option value="Semanal" ${employee?.PayFrequency === 'Semanal' ? 'selected' : ''}>Semanal</option>
               </select>
             </div>
+          </div>
+        </div>
+
+        <!-- Section 5: Acceso al Sistema Kinetix y Permisos (Unificado) -->
+        <div class="form-section">
+          <h3>5. Cuenta de Usuario y Acceso al Sistema</h3>
+          <p class="section-desc" style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
+            Asocia este expediente con un usuario ya creado en Administración, crea una cuenta nueva o regístralo únicamente como ficha laboral sin acceso al portal.
+          </p>
+
+          <div class="form-grid">
             <div class="field full">
-              <label>Vincular a Cuenta de Acceso Kinetix (Opcional)</label>
-              <select name="userId">
-                <option value="">Sin usuario vinculado</option>
-                ${userOptions}
+              <label>Vinculación con Cuenta de Usuario</label>
+              <select name="accessMode" id="emp-access-mode">
+                <option value="none" ${initialAccessMode === 'none' ? 'selected' : ''}>Sin cuenta de usuario por ahora (solo expediente en RRHH)</option>
+                <option value="link_existing" ${initialAccessMode === 'link_existing' ? 'selected' : ''}>Vincular con un usuario existente</option>
+                <option value="direct" ${initialAccessMode === 'direct' ? 'selected' : ''}>Crear nueva cuenta de usuario con contraseña temporal</option>
+                <option value="invite" ${initialAccessMode === 'invite' ? 'selected' : ''}>Crear nueva cuenta y enviar invitación por correo</option>
               </select>
-              <span class="helper">Permite al empleado acceder al portal con su rol y permisos de usuario.</span>
+            </div>
+          </div>
+
+          <div id="emp-access-fields" style="${initialAccessMode !== 'none' ? 'margin-top:14px;' : 'display:none; margin-top:14px;'}">
+            <div class="form-grid">
+              <div class="field" id="emp-existing-user-field" style="${initialAccessMode === 'link_existing' ? '' : 'display:none;'}">
+                <label>Seleccionar Usuario Existente *</label>
+                <select name="existingUserId" id="emp-existing-user-select">
+                  <option value="">Seleccione un usuario sin expediente...</option>
+                  ${userOptions}
+                </select>
+                <span class="helper">
+                  ${availableUsers.length
+                    ? 'Se muestran los usuarios registrados en Administración que no tienen otro expediente asignado. Al elegir uno se autocompletarán los campos vacíos.'
+                    : 'No hay usuarios sin expediente disponibles. Puedes elegir "Crear nueva cuenta de usuario" arriba.'}
+                </span>
+              </div>
+
+              <div class="field" id="emp-role-field">
+                <label>Rol en el Sistema *</label>
+                <select name="userRole" id="emp-user-role">
+                  ${roleOptions}
+                </select>
+                <span class="helper">Define el perfil de permisos del empleado dentro de la empresa.</span>
+              </div>
+
+              <div class="field" id="emp-password-field" style="${initialAccessMode === 'direct' ? '' : 'display:none;'}">
+                <label>Contraseña Temporal ${isEdit ? '(Opcional)' : '*'}</label>
+                <input type="password" name="userPassword" id="emp-user-password" placeholder="${isEdit ? 'Dejar en blanco para mantener la actual' : 'Mínimo 8 caracteres'}" autocomplete="new-password">
+                <span class="helper">El correo electrónico indicado en Contacto será su usuario de inicio de sesión.</span>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- Section 5: Contacto de Emergencia (solo en alta inicial) -->
+        <!-- Section 6: Contacto de Emergencia (solo en alta inicial) -->
         ${!isEdit ? `
           <div class="form-section">
-            <h3>5. Contacto de Emergencia</h3>
+            <h3>6. Contacto de Emergencia</h3>
             <div class="form-grid">
               <div class="field">
                 <label>Nombre del Contacto</label>

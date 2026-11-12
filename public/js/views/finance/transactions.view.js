@@ -1,15 +1,20 @@
-import { state } from '../../core/state.js';
+import { state, hasPermission } from '../../core/state.js';
 import { escapeHtml, displayDate, badge } from '../../components/utils.js';
+import { breadcrumb, pageHeader } from '../../components/ui.js';
 
 export function financeTransactionsView() {
+  const canCreate = hasPermission('Finanzas', 'Registrar transacciones');
   return `
+    ${breadcrumb([['finance', 'Finanzas'], ['finance-transactions', 'Transacciones']])}
+    ${pageHeader('Libro de Transacciones', 'Ingresos y egresos operacionales con auditoría de estado y balance contable.', canCreate ? '<button class="primary" data-action="new-expense">＋ Nueva transacción</button>' : '')}
+
     <div class="panel">
       <div class="panel-head">
         <div>
-          <h2>Libro de Transacciones</h2>
-          <p class="panel-note">Ingresos y egresos operacionales con auditoría de estado</p>
+          <h2>Movimientos Registrados</h2>
+          <p class="panel-note">Control detallado de flujo monetario</p>
         </div>
-        <button class="primary" data-action="new-expense">＋ Nueva transacción</button>
+        <span class="panel-note">${state.finance.transactions.length} registros</span>
       </div>
       <div class="table-wrap">
         <table>

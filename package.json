@@ -7,8 +7,10 @@
     "start": "node server.js",
     "dev": "node server.js",
     "check": "node --check server.js",
-    "migrate": "node scripts/run-migrations.mjs",
-    "test": "node scripts/test-hr-phase1.mjs && node scripts/test-hr-phase2.mjs && node scripts/test-hr-usage.mjs",
+    "migrate": "node scripts/migrate.mjs",
+    "test": "node scripts/smoke-endpoints.mjs && node scripts/test-roles.mjs && node scripts/test-hr-phase1.mjs && node scripts/test-hr-phase2.mjs && node scripts/test-hr-usage.mjs",
+    "test:smoke": "node scripts/smoke-endpoints.mjs",
+    "test:roles": "node scripts/test-roles.mjs",
     "test:phase1": "node scripts/test-hr-phase1.mjs",
     "test:phase2": "node scripts/test-hr-phase2.mjs",
     "test:usage": "node scripts/test-hr-usage.mjs"
@@ -17,9 +19,8 @@
     "dotenv": "^16.4.7",
     "express": "^5.1.0",
     "express-rate-limit": "^8.7.0",
-    "msnodesqlv8": "^4.2.1",
-    "mssql": "^11.0.1",
     "multer": "^2.4.0",
-    "pdfkit": "^0.17.2"
+    "pdfkit": "^0.17.2",
+    "pg": "^8.23.1"
   }
 }

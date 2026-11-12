@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { getPool, sql } from './db.js';
+import { db } from './db.js';
 
 export const sessionTtlMs = 8 * 60 * 60 * 1000;
 
@@ -15,57 +15,64 @@ export function hashSessionToken(token) {
 }
 
 export async function createPersistentSession(userId, token) {
-  const pool = await getPool();
-  await pool.request()
-    .input('tokenHash', sql.Char(64), hashSessionToken(token))
-    .input('userId', sql.NVarChar(450), userId)
-    .input('expiresAt', sql.DateTime2, new Date(Date.now() + sessionTtlMs))
-    .query('INSERT INTO dbo.UserSessions (TokenHash, UserId, ExpiresAt) VALUES (@tokenHash, @userId, @expiresAt);');
+  await db.insert('UserSessions', {
+    TokenHash: hashSessionToken(token),
+    UserId: userId,
+    ExpiresAt: new Date(Date.now() + sessionTtlMs)
+  }, { returning: false });
 }
+
+const lastSeenThrottleMs = 60 * 1000;
 
 export async function findPersistentSession(token) {
   if (!token) return null;
-  const pool = await getPool();
-  const result = await pool.request()
-    .input('tokenHash', sql.Char(64), hashSessionToken(token))
-    .query('SELECT TOP 1 UserId AS userId, ExpiresAt AS expiresAt FROM dbo.UserSessions WHERE TokenHash = @tokenHash;');
-  
-  const session = result.recordset[0];
+  const session = await db.findOne('UserSessions', { TokenHash: hashSessionToken(token) }, {
+    select: 'UserId AS userId, ExpiresAt AS expiresAt, LastSeenAt AS lastSeenAt'
+  });
+
   if (session && new Date(session.expiresAt).getTime() < Date.now()) {
     await deletePersistentSession(token);
     return null;
   }
-  if (session) {
-    await pool.request()
-      .input('tokenHash', sql.Char(64), hashSessionToken(token))
-      .query('UPDATE dbo.UserSessions SET LastSeenAt = SYSUTCDATETIME() WHERE TokenHash = @tokenHash;');
+  // Evita una escritura por request: solo refresca LastSeenAt cada minuto.
+  if (session && (!session.lastSeenAt || Date.now() - new Date(session.lastSeenAt).getTime() > lastSeenThrottleMs)) {
+    await db.update('UserSessions', { TokenHash: hashSessionToken(token) }, {
+      LastSeenAt: new Date()
+    }, { returning: false });
   }
   return session;
 }
 
+/** Elimina sesiones expiradas que nadie volvió a usar. */
+export async function purgeExpiredSessions() {
+  const result = await db.request()
+    .input('now', new Date())
+    .query('DELETE FROM UserSessions WHERE ExpiresAt < @now;');
+  return result.rowsAffected[0] || 0;
+}
+
 export async function deletePersistentSession(token) {
   if (!token) return;
-  const pool = await getPool();
-  await pool.request()
-    .input('tokenHash', sql.Char(64), hashSessionToken(token))
-    .query('DELETE FROM dbo.UserSessions WHERE TokenHash = @tokenHash;');
+  await db.delete('UserSessions', { TokenHash: hashSessionToken(token) });
 }
 
 export async function findUserById(userId) {
-  const pool = await getPool();
-  const result = await pool.request()
-    .input('userId', sql.NVarChar(450), userId)
+  const result = await db.request()
+    .input('userId', userId)
     .query(`
-      SELECT TOP 1 u.UserId AS userId, u.Email AS email, u.PasswordHash AS passwordHash, u.IsActive AS isActive,
-             COALESCE(r.Name, N'Employee') AS role, u.CompanyId AS companyId,
-             u.BranchId AS branchId
-      FROM dbo.UserOrganizations AS u
-      OUTER APPLY (
-        SELECT TOP 1 r.Name FROM dbo.UserRoles AS ur
-        INNER JOIN dbo.Roles AS r ON r.Id = ur.RoleId
+      SELECT u.UserId AS userId, u.FirstName AS firstName, u.LastName AS lastName,
+             u.Email AS email, u.PasswordHash AS passwordHash, u.IsActive AS isActive,
+             u.CompanyId AS companyId,
+             u.BranchId AS branchId,
+             COALESCE(r.Name, 'Employee') AS role
+      FROM UserOrganizations AS u
+      LEFT JOIN LATERAL (
+        SELECT r.Name FROM UserRoles AS ur
+        INNER JOIN Roles AS r ON r.Id = ur.RoleId
         WHERE ur.UserId = u.UserId ORDER BY r.Name
-      ) AS r
-      WHERE u.UserId = @userId;
+        LIMIT 1
+      ) AS r ON TRUE
+      WHERE u.UserId = @userId LIMIT 1;
     `);
   return result.recordset[0];
 }
@@ -94,10 +101,12 @@ export async function requireAuth(request, response, next) {
     }
     const user = await findUserById(session.userId);
     if (!user?.isActive) return response.status(403).json({ message: 'El usuario está inactivo.' });
-    
-    // Solo exponer campos necesarios — no incluir passwordHash (S-09)
+
+    // Solo exponer campos necesarios — no incluir passwordHash
     request.user = {
       userId: user.userId,
+      firstName: user.firstName,
+      lastName: user.lastName,
       email: user.email,
       isActive: user.isActive,
       role: user.role,
@@ -131,17 +140,16 @@ export function requirePermission(moduleName, permissionName) {
   return async (request, response, next) => {
     if (isGlobalAdmin(request)) return next();
     try {
-      const pool = await getPool();
-      const result = await pool.request()
-        .input('userId', sql.NVarChar(450), request.user.userId)
-        .input('moduleName', sql.NVarChar(80), moduleName)
-        .input('permissionName', sql.NVarChar(120), permissionName)
+      const result = await db.request()
+        .input('userId', request.user.userId)
+        .input('moduleName', moduleName)
+        .input('permissionName', permissionName)
         .query(`
-          SELECT TOP 1 1 AS allowed
-          FROM dbo.UserRoles AS ur
-          INNER JOIN dbo.RolePermissions AS rp ON rp.RoleId = ur.RoleId
-          INNER JOIN dbo.Permissions AS p ON p.Id = rp.PermissionId
-          WHERE ur.UserId = @userId AND p.ModuleName = @moduleName AND p.PermissionName = @permissionName;
+          SELECT 1 AS allowed
+          FROM UserRoles AS ur
+          INNER JOIN RolePermissions AS rp ON rp.RoleId = ur.RoleId
+          INNER JOIN Permissions AS p ON p.Id = rp.PermissionId
+          WHERE ur.UserId = @userId AND p.ModuleName = @moduleName AND p.PermissionName = @permissionName LIMIT 1;
         `);
       if (!result.recordset[0]) return response.status(403).json({ message: 'No tienes permiso para realizar esta operación.' });
       next();
@@ -153,22 +161,18 @@ export function requirePermission(moduleName, permissionName) {
 }
 
 export async function writeAudit(request, action, moduleName, entityName, entityId, companyId = request.user?.companyId, options = {}) {
-  const pool = await getPool();
-  await pool.request()
-    .input('userId', sql.NVarChar(450), request.user?.userId || null)
-    .input('companyId', sql.Int, companyId || null)
-    .input('branchId', sql.Int, options.branchId || null)
-    .input('action', sql.NVarChar(40), action)
-    .input('module', sql.NVarChar(80), moduleName)
-    .input('entity', sql.NVarChar(80), entityName || null)
-    .input('entityId', sql.NVarChar(100), entityId == null ? null : String(entityId))
-    .input('oldValues', sql.NVarChar(sql.MAX), options.oldValues ? (typeof options.oldValues === 'string' ? options.oldValues : JSON.stringify(options.oldValues)) : null)
-    .input('newValues', sql.NVarChar(sql.MAX), options.newValues ? (typeof options.newValues === 'string' ? options.newValues : JSON.stringify(options.newValues)) : null)
-    .input('context', sql.NVarChar(1000), options.context || null)
-    .input('ip', sql.VarChar(45), request.ip)
-    .input('userAgent', sql.NVarChar(500), request.get('user-agent') || null)
-    .query(`
-      INSERT INTO dbo.AuditLogs (UserId, CompanyId, BranchId, ActionName, ModuleName, EntityName, EntityId, OldValues, NewValues, Context, IpAddress, UserAgent)
-      VALUES (@userId, @companyId, @branchId, @action, @module, @entity, @entityId, @oldValues, @newValues, @context, @ip, @userAgent);
-    `);
+  await db.insert('AuditLogs', {
+    UserId: request.user?.userId || null,
+    CompanyId: companyId || null,
+    BranchId: options.branchId || null,
+    ActionName: action,
+    ModuleName: moduleName,
+    EntityName: entityName || null,
+    EntityId: entityId == null ? null : String(entityId),
+    OldValues: options.oldValues ? (typeof options.oldValues === 'string' ? options.oldValues : JSON.stringify(options.oldValues)) : null,
+    NewValues: options.newValues ? (typeof options.newValues === 'string' ? options.newValues : JSON.stringify(options.newValues)) : null,
+    Context: options.context || null,
+    IpAddress: request.ip,
+    UserAgent: request.get('user-agent') || null
+  }, { returning: false });
 }

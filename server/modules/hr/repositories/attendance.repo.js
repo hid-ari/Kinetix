@@ -1,4 +1,3 @@
-import sql from 'mssql/msnodesqlv8.js';
 import { createApprovalRequest } from './approvals.repo.js';
 
 /**
@@ -72,13 +71,13 @@ export function computeAttendanceMetrics(shift, checkIn, checkOut) {
  */
 export async function listWorkShifts(pool, companyId) {
   const result = await pool.request()
-    .input('companyId', sql.Int, companyId)
+    .input('companyId', companyId)
     .query(`
       SELECT Id, CompanyId, Code, Name, ShiftType,
-             CONVERT(VARCHAR(8), StartTime, 108) AS StartTime,
-             CONVERT(VARCHAR(8), EndTime, 108) AS EndTime,
+             StartTime::text AS StartTime,
+             EndTime::text AS EndTime,
              GraceMinutes, BreakMinutes, WorkDaysMask, IsActive, CreatedAt
-      FROM dbo.HrWorkShifts
+      FROM HrWorkShifts
       WHERE CompanyId = @companyId
       ORDER BY IsActive DESC, Name ASC;
     `);
@@ -90,32 +89,32 @@ export async function listWorkShifts(pool, companyId) {
  */
 export async function saveWorkShift(pool, companyId, data, shiftId = null) {
   const req = pool.request()
-    .input('companyId', sql.Int, companyId)
-    .input('code', sql.NVarChar(30), data.code.trim())
-    .input('name', sql.NVarChar(100), data.name.trim())
-    .input('type', sql.NVarChar(30), data.shiftType || 'Regular')
-    .input('start', sql.VarChar(8), data.startTime)
-    .input('end', sql.VarChar(8), data.endTime)
-    .input('grace', sql.Int, Number(data.graceMinutes ?? 15))
-    .input('break', sql.Int, Number(data.breakMinutes ?? 60))
-    .input('days', sql.VarChar(7), data.workDaysMask || '1111100');
+    .input('companyId', companyId)
+    .input('code', data.code.trim())
+    .input('name', data.name.trim())
+    .input('type', data.shiftType || 'Regular')
+    .input('start', data.startTime)
+    .input('end', data.endTime)
+    .input('grace', Number(data.graceMinutes ?? 15))
+    .input('break', Number(data.breakMinutes ?? 60))
+    .input('days', data.workDaysMask || '1111100');
 
   if (shiftId) {
-    req.input('id', sql.Int, Number(shiftId));
+    req.input('id', Number(shiftId));
     const result = await req.query(`
-      UPDATE dbo.HrWorkShifts
+      UPDATE HrWorkShifts
       SET Code = @code, Name = @name, ShiftType = @type,
           StartTime = CAST(@start AS TIME), EndTime = CAST(@end AS TIME),
           GraceMinutes = @grace, BreakMinutes = @break, WorkDaysMask = @days
-      OUTPUT INSERTED.Id, INSERTED.Code, INSERTED.Name
-      WHERE Id = @id AND CompanyId = @companyId;
+      WHERE Id = @id AND CompanyId = @companyId
+      RETURNING Id, Code, Name;
     `);
     return result.recordset[0];
   } else {
     const result = await req.query(`
-      INSERT INTO dbo.HrWorkShifts (CompanyId, Code, Name, ShiftType, StartTime, EndTime, GraceMinutes, BreakMinutes, WorkDaysMask)
-      OUTPUT INSERTED.Id, INSERTED.Code, INSERTED.Name
-      VALUES (@companyId, @code, @name, @type, CAST(@start AS TIME), CAST(@end AS TIME), @grace, @break, @days);
+      INSERT INTO HrWorkShifts (CompanyId, Code, Name, ShiftType, StartTime, EndTime, GraceMinutes, BreakMinutes, WorkDaysMask)
+      VALUES (@companyId, @code, @name, @type, CAST(@start AS TIME), CAST(@end AS TIME), @grace, @break, @days)
+      RETURNING Id, Code, Name;
     `);
     return result.recordset[0];
   }
@@ -126,26 +125,26 @@ export async function saveWorkShift(pool, companyId, data, shiftId = null) {
  */
 export async function getEmployeeShift(pool, employeeId, companyId) {
   const shiftRes = await pool.request()
-    .input('empId', sql.Int, employeeId)
-    .input('compId', sql.Int, companyId)
+    .input('empId', employeeId)
+    .input('compId', companyId)
     .query(`
-      SELECT TOP 1 s.Id, s.Code, s.Name, s.StartTime, s.EndTime, s.GraceMinutes, s.BreakMinutes, s.WorkDaysMask
-      FROM dbo.HrEmployeeShifts es
-      JOIN dbo.HrWorkShifts s ON s.Id = es.ShiftId
-      WHERE es.EmployeeId = @empId AND es.IsActive = 1 AND s.IsActive = 1
-      ORDER BY es.EffectiveDate DESC;
+      SELECT s.Id, s.Code, s.Name, s.StartTime, s.EndTime, s.GraceMinutes, s.BreakMinutes, s.WorkDaysMask
+      FROM HrEmployeeShifts es
+      JOIN HrWorkShifts s ON s.Id = es.ShiftId
+      WHERE es.EmployeeId = @empId AND es.IsActive = TRUE AND s.IsActive = TRUE
+      ORDER BY es.EffectiveDate DESC LIMIT 1;
     `);
 
   if (shiftRes.recordset[0]) return shiftRes.recordset[0];
 
   // Default company shift
   const defaultRes = await pool.request()
-    .input('compId', sql.Int, companyId)
+    .input('compId', companyId)
     .query(`
-      SELECT TOP 1 Id, Code, Name, StartTime, EndTime, GraceMinutes, BreakMinutes, WorkDaysMask
-      FROM dbo.HrWorkShifts
-      WHERE CompanyId = @compId AND IsActive = 1
-      ORDER BY Id ASC;
+      SELECT Id, Code, Name, StartTime, EndTime, GraceMinutes, BreakMinutes, WorkDaysMask
+      FROM HrWorkShifts
+      WHERE CompanyId = @compId AND IsActive = TRUE
+      ORDER BY Id ASC LIMIT 1;
     `);
 
   return defaultRes.recordset[0] || null;
@@ -156,12 +155,12 @@ export async function getEmployeeShift(pool, employeeId, companyId) {
  */
 export async function getAttendanceForDate(pool, employeeId, workDate) {
   const res = await pool.request()
-    .input('empId', sql.Int, employeeId)
-    .input('workDate', sql.Date, workDate)
+    .input('empId', employeeId)
+    .input('workDate', workDate)
     .query(`
       SELECT Id, EmployeeId, WorkDate, ShiftId, CheckInTime, CheckOutTime, LateMinutes, EarlyLeaveMinutes,
              RegularMinutes, OvertimeMinutes, Status, Notes
-      FROM dbo.HrAttendance
+      FROM HrAttendance
       WHERE EmployeeId = @empId AND WorkDate = @workDate;
     `);
   return res.recordset[0] || null;
@@ -179,30 +178,24 @@ export async function recordCheckIn(pool, { companyId, employeeId, checkInTime =
   const { late: lateMinutes, status } = computeAttendanceMetrics(shift, now, null);
 
   const result = await pool.request()
-    .input('companyId', sql.Int, companyId)
-    .input('empId', sql.Int, employeeId)
-    .input('workDate', sql.Date, workDate)
-    .input('shiftId', sql.Int, shiftId)
-    .input('checkIn', sql.DateTime2(0), now)
-    .input('late', sql.Int, lateMinutes)
-    .input('status', sql.NVarChar(30), status)
-    .input('notes', sql.NVarChar(500), notes || null)
+    .input('companyId', companyId)
+    .input('empId', employeeId)
+    .input('workDate', workDate)
+    .input('shiftId', shiftId)
+    .input('checkIn', now)
+    .input('late', lateMinutes)
+    .input('status', status)
+    .input('notes', notes || null)
     .query(`
-      MERGE dbo.HrAttendance AS target
-      USING (VALUES (@companyId, @empId, @workDate)) AS source (CompanyId, EmployeeId, WorkDate)
-      ON target.EmployeeId = source.EmployeeId AND target.WorkDate = source.WorkDate
-      WHEN MATCHED THEN
-        UPDATE SET
-          CheckInTime = ISNULL(target.CheckInTime, @checkIn),
-          ShiftId = ISNULL(target.ShiftId, @shiftId),
-          LateMinutes = CASE WHEN target.CheckInTime IS NULL THEN @late ELSE target.LateMinutes END,
-          Status = CASE WHEN target.CheckInTime IS NULL THEN @status ELSE target.Status END,
-          UpdatedAt = SYSUTCDATETIME()
-      WHEN NOT MATCHED THEN
-        INSERT (CompanyId, EmployeeId, WorkDate, ShiftId, CheckInTime, LateMinutes, Status, Notes)
-        VALUES (@companyId, @empId, @workDate, @shiftId, @checkIn, @late, @status, @notes)
-      OUTPUT INSERTED.Id, INSERTED.WorkDate, INSERTED.CheckInTime, INSERTED.Status, INSERTED.LateMinutes;
-    `);
+      INSERT INTO HrAttendance (CompanyId, EmployeeId, WorkDate, ShiftId, CheckInTime, LateMinutes, Status, Notes)
+      VALUES (@companyId, @empId, @workDate, @shiftId, @checkIn, @late, @status, @notes)
+      ON CONFLICT (EmployeeId, WorkDate) DO UPDATE SET
+        CheckInTime = COALESCE(HrAttendance.CheckInTime, EXCLUDED.CheckInTime),
+        ShiftId = COALESCE(HrAttendance.ShiftId, EXCLUDED.ShiftId),
+        LateMinutes = CASE WHEN HrAttendance.CheckInTime IS NULL THEN EXCLUDED.LateMinutes ELSE HrAttendance.LateMinutes END,
+        Status = CASE WHEN HrAttendance.CheckInTime IS NULL THEN EXCLUDED.Status ELSE HrAttendance.Status END,
+        UpdatedAt = now()
+      RETURNING Id, WorkDate, CheckInTime, Status, LateMinutes;`);
 
   return result.recordset[0];
 }
@@ -215,13 +208,13 @@ export async function recordCheckOut(pool, { companyId, employeeId, checkOutTime
   const workDate = localDateStr(now);
 
   const existingRes = await pool.request()
-    .input('empId', sql.Int, employeeId)
-    .input('workDate', sql.Date, workDate)
+    .input('empId', employeeId)
+    .input('workDate', workDate)
     .query(`
       SELECT a.Id, a.CheckInTime, a.ShiftId, a.LateMinutes, a.Status,
              s.StartTime, s.EndTime, s.BreakMinutes
-      FROM dbo.HrAttendance a
-      LEFT JOIN dbo.HrWorkShifts s ON s.Id = a.ShiftId
+      FROM HrAttendance a
+      LEFT JOIN HrWorkShifts s ON s.Id = a.ShiftId
       WHERE a.EmployeeId = @empId AND a.WorkDate = @workDate;
     `);
 
@@ -239,22 +232,22 @@ export async function recordCheckOut(pool, { companyId, employeeId, checkOutTime
   const { early, regular, overtime } = computeAttendanceMetrics(shift, existing.CheckInTime, now);
 
   const result = await pool.request()
-    .input('id', sql.BigInt, existing.Id)
-    .input('checkOut', sql.DateTime2(0), now)
-    .input('early', sql.Int, early)
-    .input('regular', sql.Int, regular)
-    .input('overtime', sql.Int, overtime)
-    .input('notes', sql.NVarChar(500), notes || null)
+    .input('id', existing.Id)
+    .input('checkOut', now)
+    .input('early', early)
+    .input('regular', regular)
+    .input('overtime', overtime)
+    .input('notes', notes || null)
     .query(`
-      UPDATE dbo.HrAttendance
+      UPDATE HrAttendance
       SET CheckOutTime = @checkOut,
           EarlyLeaveMinutes = @early,
           RegularMinutes = @regular,
           OvertimeMinutes = @overtime,
-          Notes = CASE WHEN @notes IS NOT NULL THEN @notes ELSE Notes END,
-          UpdatedAt = SYSUTCDATETIME()
-      OUTPUT INSERTED.Id, INSERTED.WorkDate, INSERTED.CheckInTime, INSERTED.CheckOutTime, INSERTED.RegularMinutes, INSERTED.OvertimeMinutes
-      WHERE Id = @id;
+          Notes = COALESCE(@notes::text, Notes),
+          UpdatedAt = now()
+      WHERE Id = @id
+      RETURNING Id, WorkDate, CheckInTime, CheckOutTime, RegularMinutes, OvertimeMinutes;
     `);
 
   return result.recordset[0];
@@ -272,33 +265,34 @@ export async function setAttendanceTimes(pool, { companyId, employeeId, workDate
   const m = computeAttendanceMetrics(shift, ci, co);
 
   const result = await pool.request()
-    .input('companyId', sql.Int, companyId)
-    .input('empId', sql.Int, employeeId)
-    .input('workDate', sql.Date, workDate)
-    .input('shiftId', sql.Int, shift?.Id || null)
-    .input('checkIn', sql.DateTime2(0), ci)
-    .input('checkOut', sql.DateTime2(0), co)
-    .input('late', sql.Int, m.late)
-    .input('early', sql.Int, m.early)
-    .input('regular', sql.Int, m.regular)
-    .input('overtime', sql.Int, m.overtime)
-    .input('status', sql.NVarChar(30), m.status)
-    .input('notes', sql.NVarChar(500), notes || null)
+    .input('companyId', companyId)
+    .input('empId', employeeId)
+    .input('workDate', workDate)
+    .input('shiftId', shift?.Id || null)
+    .input('checkIn', ci)
+    .input('checkOut', co)
+    .input('late', m.late)
+    .input('early', m.early)
+    .input('regular', m.regular)
+    .input('overtime', m.overtime)
+    .input('status', m.status)
+    .input('notes', notes || null)
     .query(`
-      MERGE dbo.HrAttendance AS target
-      USING (VALUES (@empId, @workDate)) AS source (EmployeeId, WorkDate)
-      ON target.EmployeeId = source.EmployeeId AND target.WorkDate = source.WorkDate
-      WHEN MATCHED THEN
-        UPDATE SET CheckInTime = @checkIn, CheckOutTime = @checkOut, ShiftId = ISNULL(@shiftId, target.ShiftId),
-                   LateMinutes = @late, EarlyLeaveMinutes = @early, RegularMinutes = @regular,
-                   OvertimeMinutes = @overtime, Status = @status,
-                   Notes = ISNULL(@notes, target.Notes), UpdatedAt = SYSUTCDATETIME()
-      WHEN NOT MATCHED THEN
-        INSERT (CompanyId, EmployeeId, WorkDate, ShiftId, CheckInTime, CheckOutTime, LateMinutes, EarlyLeaveMinutes,
-                RegularMinutes, OvertimeMinutes, Status, Notes)
-        VALUES (@companyId, @empId, @workDate, @shiftId, @checkIn, @checkOut, @late, @early, @regular, @overtime, @status, @notes)
-      OUTPUT INSERTED.Id;
-    `);
+      INSERT INTO HrAttendance (CompanyId, EmployeeId, WorkDate, ShiftId, CheckInTime, CheckOutTime, LateMinutes, EarlyLeaveMinutes,
+              RegularMinutes, OvertimeMinutes, Status, Notes)
+      VALUES (@companyId, @empId, @workDate, @shiftId, @checkIn, @checkOut, @late, @early, @regular, @overtime, @status, @notes)
+      ON CONFLICT (EmployeeId, WorkDate) DO UPDATE SET
+        CheckInTime = EXCLUDED.CheckInTime,
+        CheckOutTime = EXCLUDED.CheckOutTime,
+        ShiftId = COALESCE(EXCLUDED.ShiftId, HrAttendance.ShiftId),
+        LateMinutes = EXCLUDED.LateMinutes,
+        EarlyLeaveMinutes = EXCLUDED.EarlyLeaveMinutes,
+        RegularMinutes = EXCLUDED.RegularMinutes,
+        OvertimeMinutes = EXCLUDED.OvertimeMinutes,
+        Status = EXCLUDED.Status,
+        Notes = COALESCE(EXCLUDED.Notes, HrAttendance.Notes),
+        UpdatedAt = now()
+      RETURNING Id;`);
   return result.recordset[0];
 }
 
@@ -329,24 +323,24 @@ export async function listAttendance(pool, {
   if (branchId) where += ` AND e.BranchId = @branchId`;
   if (employeeId) where += ` AND a.EmployeeId = @empId`;
   if (status) where += ` AND a.Status = @status`;
-  if (visibleFor) where += ` AND a.EmployeeId IN (SELECT EmployeeId FROM dbo.fn_HrVisibleEmployees(@visUser, 0, @visCompanyAdmin))`;
+  if (visibleFor) where += ` AND a.EmployeeId IN (SELECT EmployeeId FROM fn_HrVisibleEmployees(@visUser, FALSE, @visCompanyAdmin::boolean))`;
 
-  const req = pool.request().input('companyId', sql.Int, companyId);
-  if (startDate) req.input('startDate', sql.Date, startDate);
-  if (endDate) req.input('endDate', sql.Date, endDate);
-  if (departmentId) req.input('deptId', sql.Int, Number(departmentId));
-  if (branchId) req.input('branchId', sql.Int, Number(branchId));
-  if (employeeId) req.input('empId', sql.Int, Number(employeeId));
-  if (status) req.input('status', sql.NVarChar(30), status);
+  const req = pool.request().input('companyId', companyId);
+  if (startDate) req.input('startDate', startDate);
+  if (endDate) req.input('endDate', endDate);
+  if (departmentId) req.input('deptId', Number(departmentId));
+  if (branchId) req.input('branchId', Number(branchId));
+  if (employeeId) req.input('empId', Number(employeeId));
+  if (status) req.input('status', status);
   if (visibleFor) {
-    req.input('visUser', sql.NVarChar(450), visibleFor.userId);
-    req.input('visCompanyAdmin', sql.Bit, visibleFor.isCompanyAdmin ? 1 : 0);
+    req.input('visUser', visibleFor.userId);
+    req.input('visCompanyAdmin', Boolean(visibleFor.isCompanyAdmin));
   }
 
   const countQuery = `
     SELECT COUNT(*) AS total
-    FROM dbo.HrAttendance a
-    JOIN dbo.HrEmployees e ON e.Id = a.EmployeeId
+    FROM HrAttendance a
+    JOIN HrEmployees e ON e.Id = a.EmployeeId
     ${where};
   `;
 
@@ -357,26 +351,26 @@ export async function listAttendance(pool, {
            CAST(a.RegularMinutes / 60.0 AS DECIMAL(6,2)) AS RegularHours,
            CAST(a.OvertimeMinutes / 60.0 AS DECIMAL(6,2)) AS OvertimeHours,
            a.Status, a.Notes,
-           CONCAT(e.FirstName, N' ', e.LastName) AS EmployeeName,
+           CONCAT(e.FirstName, ' ', e.LastName) AS EmployeeName,
            e.FirstName, e.LastName,
            e.EmployeeCode,
            p.Title AS PositionTitle,
            d.Name AS DepartmentName,
            b.Name AS BranchName,
            s.Name AS ShiftName
-    FROM dbo.HrAttendance a
-    JOIN dbo.HrEmployees e ON e.Id = a.EmployeeId
-    LEFT JOIN dbo.HrPositions p ON p.Id = e.PositionId
-    LEFT JOIN dbo.HrDepartments d ON d.Id = e.DepartmentId
-    LEFT JOIN dbo.Branches b ON b.Id = e.BranchId
-    LEFT JOIN dbo.HrWorkShifts s ON s.Id = a.ShiftId
+    FROM HrAttendance a
+    JOIN HrEmployees e ON e.Id = a.EmployeeId
+    LEFT JOIN HrPositions p ON p.Id = e.PositionId
+    LEFT JOIN HrDepartments d ON d.Id = e.DepartmentId
+    LEFT JOIN Branches b ON b.Id = e.BranchId
+    LEFT JOIN HrWorkShifts s ON s.Id = a.ShiftId
     ${where}
     ORDER BY a.WorkDate DESC, e.LastName ASC, e.FirstName ASC
-    OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY;
+    LIMIT @pageSize OFFSET @offset;
   `;
 
-  req.input('offset', sql.Int, offset);
-  req.input('pageSize', sql.Int, pageSize);
+  req.input('offset', offset);
+  req.input('pageSize', pageSize);
 
   const [countRes, dataRes] = await Promise.all([
     req.query(countQuery),
@@ -418,20 +412,19 @@ export async function requestAttendanceCorrection(pool, {
     throw err;
   }
 
-  const empRes = await pool.request()
-    .input('id', sql.Int, employeeId)
-    .query('SELECT CompanyId FROM dbo.HrEmployees WHERE Id = @id;');
-  if (!empRes.recordset[0] || empRes.recordset[0].CompanyId !== Number(companyId)) {
+  const emp = await pool.findById('HrEmployees', employeeId, { select: 'CompanyId' });
+  if (!emp || emp.CompanyId !== Number(companyId)) {
     const err = new Error('Empleado no encontrado en la empresa.');
     err.status = 404;
     throw err;
   }
 
-  const dup = await pool.request()
-    .input('empId', sql.Int, employeeId)
-    .input('date', sql.Date, workDate)
-    .query(`SELECT TOP 1 Id FROM dbo.HrAttendanceCorrections WHERE EmployeeId = @empId AND WorkDate = @date AND Status = N'Pendiente';`);
-  if (dup.recordset[0]) {
+  const dup = await pool.findOne('HrAttendanceCorrections', {
+    EmployeeId: employeeId,
+    WorkDate: workDate,
+    Status: 'Pendiente'
+  });
+  if (dup) {
     const err = new Error('Ya existe una solicitud de corrección pendiente para esa fecha.');
     err.status = 409;
     throw err;
@@ -439,30 +432,16 @@ export async function requestAttendanceCorrection(pool, {
 
   const existing = await getAttendanceForDate(pool, employeeId, workDate);
 
-  const corrRes = await pool.request()
-    .input('attId', sql.BigInt, existing?.Id || null)
-    .input('empId', sql.Int, employeeId)
-    .input('workDate', sql.Date, workDate)
-    .input('origIn', sql.DateTime2(0), existing?.CheckInTime || null)
-    .input('origOut', sql.DateTime2(0), existing?.CheckOutTime || null)
-    .input('reqIn', sql.DateTime2(0), requestedCheckIn ? new Date(requestedCheckIn) : null)
-    .input('reqOut', sql.DateTime2(0), requestedCheckOut ? new Date(requestedCheckOut) : null)
-    .input('reason', sql.NVarChar(500), reason.trim())
-    .query(`
-      INSERT INTO dbo.HrAttendanceCorrections (
-        AttendanceId, EmployeeId, WorkDate,
-        OriginalCheckIn, OriginalCheckOut,
-        RequestedCheckIn, RequestedCheckOut, Reason
-      )
-      OUTPUT INSERTED.Id, INSERTED.EmployeeId, INSERTED.WorkDate, INSERTED.Status
-      VALUES (
-        @attId, @empId, @workDate,
-        @origIn, @origOut,
-        @reqIn, @reqOut, @reason
-      );
-    `);
-
-  const correction = corrRes.recordset[0];
+  const correction = await pool.insert('HrAttendanceCorrections', {
+    AttendanceId: existing?.Id || null,
+    EmployeeId: employeeId,
+    WorkDate: workDate,
+    OriginalCheckIn: existing?.CheckInTime || null,
+    OriginalCheckOut: existing?.CheckOutTime || null,
+    RequestedCheckIn: requestedCheckIn ? new Date(requestedCheckIn) : null,
+    RequestedCheckOut: requestedCheckOut ? new Date(requestedCheckOut) : null,
+    Reason: reason.trim()
+  }, { returning: 'Id, EmployeeId, WorkDate, Status' });
 
   // Initiate approval flow
   const approval = await createApprovalRequest(pool, {
@@ -473,10 +452,9 @@ export async function requestAttendanceCorrection(pool, {
     requesterEmployeeId: employeeId
   });
 
-  await pool.request()
-    .input('id', sql.Int, correction.Id)
-    .input('appId', sql.Int, approval.Id)
-    .query('UPDATE dbo.HrAttendanceCorrections SET ApprovalRequestId = @appId WHERE Id = @id;');
+  await pool.update('HrAttendanceCorrections', correction.Id, {
+    ApprovalRequestId: approval.Id
+  }, { returning: false });
 
   return { correction, approval };
 }
@@ -486,14 +464,14 @@ export async function requestAttendanceCorrection(pool, {
  */
 export async function applyAttendanceCorrection(pool, correctionId) {
   const corrRes = await pool.request()
-    .input('id', sql.Int, correctionId)
-    .query('SELECT * FROM dbo.HrAttendanceCorrections WHERE Id = @id;');
+    .input('id', correctionId)
+    .query('SELECT * FROM HrAttendanceCorrections WHERE Id = @id;');
   const corr = corrRes.recordset[0];
   if (!corr || corr.Status === 'Aprobada') return;
 
   const empRes = await pool.request()
-    .input('id', sql.Int, corr.EmployeeId)
-    .query('SELECT CompanyId FROM dbo.HrEmployees WHERE Id = @id;');
+    .input('id', corr.EmployeeId)
+    .query('SELECT CompanyId FROM HrEmployees WHERE Id = @id;');
   const companyId = empRes.recordset[0]?.CompanyId;
 
   const workDate = new Date(corr.WorkDate).toISOString().slice(0, 10);
@@ -508,6 +486,6 @@ export async function applyAttendanceCorrection(pool, correctionId) {
   });
 
   await pool.request()
-    .input('id', sql.Int, correctionId)
-    .query("UPDATE dbo.HrAttendanceCorrections SET Status = N'Aprobada' WHERE Id = @id;");
+    .input('id', correctionId)
+    .query("UPDATE HrAttendanceCorrections SET Status = 'Aprobada' WHERE Id = @id;");
 }

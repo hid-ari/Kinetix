@@ -1,0 +1,677 @@
+/* ==========================================================================
+   HUMAN RESOURCES (RRHH) MODULE VIEWS
+   Terminal de Asistencia, Turnos, Vacaciones (Art. 177), Organigrama y Calendario
+   ========================================================================== */
+
+/* ── Base View Container & Headers ─────────────────────────── */
+.hr-view {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  width: 100%;
+  animation: fadeInHr 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.view-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-bottom: 2px;
+}
+
+.view-header h2 {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--navy);
+  letter-spacing: -0.025em;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.view-header .subtitle {
+  font-size: 13.5px;
+  color: var(--muted);
+  margin-top: 4px;
+  line-height: 1.45;
+}
+
+/* ── Org Chart & Movement Timeline Bullets ─────────────────── */
+.org-node-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.org-node-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: var(--shadow-md);
+}
+
+.activity-item .activity-bullet.mov-ingreso        { background: #059669; }
+.activity-item .activity-bullet.mov-ascenso        { background: #2563eb; }
+.activity-item .activity-bullet.mov-transferencia  { background: #6366f1; }
+.activity-item .activity-bullet.mov-salario        { background: #0284c7; }
+.activity-item .activity-bullet.mov-suspension     { background: #d97706; }
+.activity-item .activity-bullet.mov-licencia       { background: #0284c7; }
+.activity-item .activity-bullet.mov-desvinculacion { background: #e11d48; }
+
+/* ── Attendance Hero Terminal ──────────────────────────────── */
+.attendance-hero-card {
+  display: grid;
+  grid-template-columns: 1.15fr 1.35fr;
+  gap: 20px;
+  margin-bottom: 2px;
+}
+
+@media (max-width: 900px) {
+  .attendance-hero-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+.attendance-clock-terminal {
+  background: linear-gradient(145deg, #0b1528 0%, #172554 50%, #0f172a 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 26px 28px;
+  color: #ffffff;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.25);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.attendance-clock-terminal::after {
+  content: "";
+  position: absolute;
+  top: -40%;
+  right: -20%;
+  width: 260px;
+  height: 260px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.28) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.terminal-live-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #93c5fd;
+  background: rgba(37, 99, 235, 0.25);
+  border: 1px solid rgba(147, 197, 253, 0.3);
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+
+.pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 10px #10b981;
+  animation: pulseLive 2s infinite;
+}
+
+.live-clock-time {
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 42px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  line-height: 1;
+  margin-bottom: 8px;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.live-clock-date {
+  font-size: 13px;
+  color: #94a3b8;
+  font-weight: 500;
+  text-transform: capitalize;
+  margin-bottom: 18px;
+}
+
+.shift-info-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(8px);
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  color: #cbd5e1;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  width: fit-content;
+}
+
+.shift-info-pill svg {
+  width: 15px;
+  height: 15px;
+  color: #60a5fa;
+  flex-shrink: 0;
+}
+
+.shift-info-pill strong {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+/* ── Punch Action Panel ────────────────────────────────────── */
+.attendance-punch-panel {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 24px 26px;
+  box-shadow: 0 4px 15px -3px rgba(15, 23, 42, 0.05);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.punch-status-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  transition: all 0.2s ease;
+}
+
+.punch-status-card.idle {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+}
+
+.punch-status-card.active {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.punch-status-card.completed {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.punch-status-icon-wrap {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.punch-status-card.idle .punch-status-icon-wrap {
+  background: #e2e8f0;
+  color: #64748b;
+}
+
+.punch-status-card.active .punch-status-icon-wrap {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.punch-status-card.completed .punch-status-icon-wrap {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.punch-status-icon-wrap svg {
+  width: 20px;
+  height: 20px;
+}
+
+.punch-status-info h4 {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 3px;
+}
+
+.punch-status-info p {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.punch-buttons-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.btn-punch {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  text-align: left;
+  overflow: hidden;
+}
+
+.btn-punch-in {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.btn-punch-in:not(:disabled):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(5, 150, 105, 0.35);
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+.btn-punch-out {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.btn-punch-out:not(:disabled):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35);
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+}
+
+.btn-punch:disabled {
+  background: #f1f5f9 !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #94a3b8 !important;
+  box-shadow: none !important;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.btn-punch-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.2);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.btn-punch:disabled .btn-punch-icon {
+  background: #e2e8f0;
+  color: #94a3b8;
+}
+
+.btn-punch-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.btn-punch:not(:disabled):hover .btn-punch-icon {
+  transform: scale(1.08);
+}
+
+.btn-punch-text strong {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.btn-punch-text small {
+  display: block;
+  font-size: 11.5px;
+  opacity: 0.88;
+  margin-top: 2px;
+}
+
+/* ── Vacations Balance Hero Cards ──────────────────────────── */
+.vacations-balance-hero {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 2px;
+}
+
+@media (max-width: 1024px) {
+  .vacations-balance-hero {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.balance-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.balance-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -4px rgba(15, 23, 42, 0.08);
+  border-color: #cbd5e1;
+}
+
+.balance-card.hero-available {
+  background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #1d4ed8 100%);
+  color: #ffffff;
+  border-color: #1d4ed8;
+  box-shadow: 0 8px 20px -4px rgba(37, 99, 235, 0.35);
+}
+
+.balance-card.hero-available .balance-title {
+  color: #bfdbfe;
+}
+
+.balance-card.hero-available .balance-number {
+  color: #ffffff;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.balance-card.hero-available .balance-meta {
+  color: #dbeafe;
+}
+
+.balance-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.balance-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #64748b;
+}
+
+.balance-icon-pill {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+}
+
+.balance-card.hero-available .balance-icon-pill {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.balance-card .balance-icon-pill.blue  { background: #eff6ff; color: #2563eb; }
+.balance-card .balance-icon-pill.amber { background: #fffbeb; color: #d97706; }
+.balance-card .balance-icon-pill.green { background: #ecfdf5; color: #059669; }
+
+.balance-icon-pill svg {
+  width: 18px;
+  height: 18px;
+}
+
+.balance-number {
+  font-size: 38px;
+  font-weight: 800;
+  line-height: 1;
+  color: #0f172a;
+  margin-bottom: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.balance-number.text-blue  { color: #0284c7; }
+.balance-number.text-amber { color: #d97706; }
+.balance-number.text-green { color: #16a34a; }
+
+.balance-meta {
+  font-size: 11.5px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+/* ── Shift Cards Grid ──────────────────────────────────────── */
+.grid-cards-shifts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+  padding: 20px;
+}
+
+.shift-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  transition: all 0.2s ease;
+}
+
+.shift-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -4px rgba(15, 23, 42, 0.08);
+  border-color: #cbd5e1;
+}
+
+.shift-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.shift-card-head strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.shift-desc {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.shift-times {
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #f8fafc;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid #f1f5f9;
+}
+
+.shift-times div {
+  display: flex;
+  justify-content: space-between;
+}
+
+.shift-times span {
+  color: #64748b;
+}
+
+.shift-times strong {
+  color: #0f172a;
+}
+
+/* ── Dominican Labor Law Grid ──────────────────────────────── */
+.law-articles-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  padding: 20px;
+}
+
+@media (max-width: 900px) {
+  .law-articles-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.law-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.2s ease;
+}
+
+.law-card:hover {
+  background: #ffffff;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06);
+  border-color: #cbd5e1;
+}
+
+.law-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #0f172a;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 3px 10px;
+  border-radius: 6px;
+  width: fit-content;
+}
+
+.law-card h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.law-card p {
+  margin: 0;
+  font-size: 12.5px;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.law-card ul {
+  margin: 4px 0 0 16px;
+  padding: 0;
+  font-size: 12.5px;
+  color: #475569;
+  line-height: 1.5;
+}
+
+/* ── Calendar Events Grid ──────────────────────────────────── */
+.events-list-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  padding: 20px;
+}
+
+.calendar-event-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  transition: all 0.2s ease;
+}
+
+.calendar-event-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06);
+}
+
+.calendar-event-card.event-vacation {
+  border-left: 4px solid #2563eb;
+}
+
+.calendar-event-card.event-leave {
+  border-left: 4px solid #7c3aed;
+}
+
+.event-icon-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.calendar-event-card.event-vacation .event-icon-circle {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.calendar-event-card.event-leave .event-icon-circle {
+  background: #faf5ff;
+  color: #7c3aed;
+}
+
+.event-icon-circle svg {
+  width: 20px;
+  height: 20px;
+}
+
+.event-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.event-details strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.event-type {
+  font-size: 11.5px;
+  color: #64748b;
+}
+
+.event-dates {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #2563eb;
+}
+

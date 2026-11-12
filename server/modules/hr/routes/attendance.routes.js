@@ -43,7 +43,7 @@ export function createAttendanceRouter(ctx) {
       if (employeeId) {
         const empRes = await pool.request()
           .input('id', employeeId)
-          .query('SELECT Id, CompanyId, FirstName, LastName, EmployeeCode FROM dbo.HrEmployees WHERE Id = @id;');
+          .query('SELECT Id, CompanyId, FirstName, LastName, EmployeeCode FROM HrEmployees WHERE Id = @id;');
         employee = empRes.recordset[0] || null;
         shift = await getEmployeeShift(pool, employeeId, companyId);
         attendance = await getAttendanceForDate(pool, employeeId, localDateStr());
@@ -247,7 +247,7 @@ export function createAttendanceRouter(ctx) {
       await writeAudit(req, req.body.id ? 'UPDATE' : 'CREATE', 'RRHH Asistencia', 'HrWorkShift', String(shift.Id), companyId);
       res.status(201).json({ message: 'Turno guardado exitosamente.', shift });
     } catch (err) {
-      if (err.number === 2627 || err.number === 2601) {
+      if (err.code === '23505') {
         return res.status(409).json({ message: 'Ya existe un turno con ese código.' });
       }
       sendError(res, err, 'Error al guardar turno laboral.');

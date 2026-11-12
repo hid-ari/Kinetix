@@ -81,8 +81,9 @@ export function createPositionsRouter(ctx) {
       res.status(201).json(created);
     } catch (err) {
       console.error('Error creating position:', err);
-      res.status(err.number === 2627 ? 409 : (err.status || 500)).json({
-        message: err.number === 2627 ? 'Ya existe un cargo con ese código en esta empresa.' : (err.message || 'Error al crear cargo.')
+      const isDuplicate = err.code === '23505';
+      res.status(isDuplicate ? 409 : (err.status || 500)).json({
+        message: isDuplicate ? 'Ya existe un cargo con ese código en esta empresa.' : (err.message || 'Error al crear cargo.')
       });
     }
   });
@@ -122,8 +123,9 @@ export function createPositionsRouter(ctx) {
       res.json(updated);
     } catch (err) {
       console.error('Error updating position:', err);
-      res.status(err.number === 2627 ? 409 : (err.status || 500)).json({
-        message: err.number === 2627 ? 'Ya existe un cargo con ese código en esta empresa.' : (err.message || 'Error al actualizar cargo.')
+      const isDuplicate = err.code === '23505';
+      res.status(isDuplicate ? 409 : (err.status || 500)).json({
+        message: isDuplicate ? 'Ya existe un cargo con ese código en esta empresa.' : (err.message || 'Error al actualizar cargo.')
       });
     }
   });

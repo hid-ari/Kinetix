@@ -2,7 +2,45 @@ import { state } from '../../core/state.js';
 import { escapeHtml, badge, initials as getInitials } from '../../components/utils.js';
 import { breadcrumb, pageHeader } from '../../components/ui.js';
 
+const AUDIT_MODULES = [
+  'Usuarios',
+  'Empresas',
+  'Sucursales',
+  'Roles',
+  'Acceso',
+  'RRHH Empleados',
+  'RRHH Estructura',
+  'RRHH Asistencia',
+  'RRHH Vacaciones',
+  'RRHH Licencias',
+  'RRHH Aprobaciones',
+  'Inventario',
+  'Finanzas'
+];
+
+const AUDIT_ACTIONS = [
+  'CREATE',
+  'UPDATE',
+  'DELETE',
+  'ACTIVATE',
+  'DEACTIVATE',
+  'LOGIN',
+  'LOGIN_FAILED',
+  'PASSWORD_CHANGE',
+  'PASSWORD_RESET'
+];
+
 export function audit() {
+  const moduleOptions = AUDIT_MODULES.map(m =>
+    `<option value="${escapeHtml(m)}" ${state.auditModule === m ? 'selected' : ''}>${escapeHtml(m)}</option>`
+  ).join('');
+
+  const actionOptions = AUDIT_ACTIONS.map(a =>
+    `<option value="${escapeHtml(a)}" ${state.auditAction === a ? 'selected' : ''}>${escapeHtml(a)}</option>`
+  ).join('');
+
+  const hasFilters = Boolean(state.auditSearch || state.auditModule || state.auditAction);
+
   return `
     ${breadcrumb([['dashboard', 'Administración'], ['audit', 'Auditoría']])}
     ${pageHeader('Auditoría', 'Registro inmutable de trazabilidad de acciones operativas y de seguridad.', '<button class="secondary" data-action="export-audit">⇓ Exportar CSV</button>')}
@@ -12,26 +50,16 @@ export function audit() {
           <input id="page-search" placeholder="Buscar usuario o registro..." value="${escapeHtml(state.auditSearch)}" style="min-width:240px;">
           <select data-audit-filter="module">
             <option value="">Todos los módulos</option>
-            <option value="Usuarios">Usuarios</option>
-            <option value="Empresas">Empresas</option>
-            <option value="Sucursales">Sucursales</option>
-            <option value="Acceso">Acceso</option>
-            <option value="Inventario">Inventario</option>
-            <option value="Finanzas">Finanzas</option>
-            <option value="Roles">Roles</option>
+            ${moduleOptions}
           </select>
           <select data-audit-filter="action">
             <option value="">Todas las acciones</option>
-            <option value="CREATE">CREATE</option>
-            <option value="UPDATE">UPDATE</option>
-            <option value="LOGIN">LOGIN</option>
-            <option value="LOGIN_FAILED">LOGIN_FAILED</option>
-            <option value="ACTIVATE">ACTIVATE</option>
-            <option value="DEACTIVATE">DEACTIVATE</option>
-            <option value="PASSWORD_CHANGE">PASSWORD_CHANGE</option>
+            ${actionOptions}
           </select>
           <button class="primary" data-action="refresh-audit" style="padding:0 16px;">Buscar</button>
+          ${hasFilters ? '<button class="secondary" data-action="clear-audit-filters" style="padding:0 12px;">Limpiar</button>' : ''}
         </div>
+        <span class="panel-note">${state.audit.length} registros</span>
       </div>
       <div class="table-wrap">
         <table>

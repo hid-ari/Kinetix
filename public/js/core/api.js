@@ -19,7 +19,8 @@ export async function loadData() {
     companiesResponse, usersResponse, branchesResponse, rolesResponse,
     permissionsResponse, auditResponse, productsResponse, stockResponse,
     movementsResponse, financeResponse, financeTransactionsResponse,
-    financeInvoicesResponse, financeContactsResponse, financeBankResponse
+    financeInvoicesResponse, financeContactsResponse, financeBankResponse,
+    hrDashResponse, hrAppResponse
   ] = await Promise.all([
     fetch(`/api/companies?page=${state.companiesPage}&pageSize=${state.companiesPageSize}`, { credentials: 'include' }),
     fetch(`/api/users?page=${state.usersPage}&pageSize=${state.usersPageSize}`, { credentials: 'include' }),
@@ -34,17 +35,27 @@ export async function loadData() {
     fetch('/api/finance/transactions', { credentials: 'include' }),
     fetch('/api/finance/invoices', { credentials: 'include' }),
     fetch('/api/finance/contacts', { credentials: 'include' }),
-    fetch('/api/finance/bank-transactions', { credentials: 'include' })
+    fetch('/api/finance/bank-transactions', { credentials: 'include' }),
+    fetch('/api/hr/dashboard', { credentials: 'include' }).catch(() => null),
+    fetch('/api/hr/approvals/pending', { credentials: 'include' }).catch(() => null)
   ]);
 
   if (companiesResponse.ok) {
     const companiesPayload = await companiesResponse.json();
     state.companiesTotal = companiesPayload.total || 0;
     state.companies = (companiesPayload.data || []).map(company => ({
-      id: company.Id, name: company.Name, rnc: company.Rnc, users: company.UserCount,
-      activeUsers: company.ActiveUserCount, inactiveUsers: company.InactiveUserCount,
-      branches: company.BranchCount, status: company.IsActive ? 'Activa' : 'Inactiva',
-      date: displayDate(company.CreatedAt), email: company.ContactEmail || ''
+      id: company.Id,
+      name: company.Name,
+      rnc: company.Rnc,
+      users: company.UserCount,
+      activeUsers: company.ActiveUserCount,
+      inactiveUsers: company.InactiveUserCount,
+      branches: company.BranchCount,
+      status: company.IsActive ? 'Activa' : 'Inactiva',
+      date: displayDate(company.CreatedAt),
+      email: company.ContactEmail || '',
+      phone: company.Phone || '',
+      address: company.Address || ''
     }));
   } else {
     state.companiesTotal = 0;
@@ -55,9 +66,21 @@ export async function loadData() {
     const usersPayload = await usersResponse.json();
     state.usersTotal = usersPayload.total ?? (Array.isArray(usersPayload) ? usersPayload.length : (usersPayload.data?.length || 0));
     state.users = ((usersPayload.data || usersPayload) || []).map(user => ({
-      id: user.id, name: user.name, email: user.email || 'Sin email', company: user.company,
-      branch: user.branch || 'Sin sucursal', role: user.role, status: user.IsActive ? 'Activa' : 'Inactiva',
-      last: displayDate(user.LastLoginAt)
+      id: user.id,
+      name: user.name,
+      firstName: user.firstName || '',
+      lastName: user.lastName || '',
+      email: user.email || 'Sin email',
+      phone: user.phone || '',
+      company: user.company,
+      branchId: user.branchId || null,
+      branch: user.branch || 'Sin sucursal',
+      role: user.role,
+      status: user.IsActive ? 'Activa' : 'Inactiva',
+      last: displayDate(user.LastLoginAt),
+      employeeId: user.employeeId || null,
+      employeeCode: user.employeeCode || '',
+      employeeName: user.employeeName || ''
     }));
   } else {
     state.usersTotal = 0;
@@ -67,9 +90,11 @@ export async function loadData() {
   if (branchesResponse.ok) {
     const branchesData = await branchesResponse.json();
     state.branches = (Array.isArray(branchesData) ? branchesData : []).map(branch => ({
-      id: branch.id, name: branch.name, code: branch.code, company: branch.company,
-      manager: branch.managerUserId || 'Sin encargado', users: branch.userCount,
-      status: branch.IsActive ? 'Activa' : 'Inactiva'
+      id: branch.id, companyId: branch.companyId, name: branch.name, code: branch.code, company: branch.company,
+      address: branch.address || '', phone: branch.phone || '', email: branch.email || '',
+      managerUserId: branch.managerUserId || '', manager: branch.managerName || 'Sin encargado',
+      users: Number(branch.userCount) || 0,
+      status: branch.IsActive ?? branch.isActive ? 'Activa' : 'Inactiva'
     }));
   } else {
     state.branches = [];
@@ -143,6 +168,16 @@ export async function loadData() {
     };
   }
 
+  if (hrDashResponse?.ok) {
+    try { state.hr.dashboard = await hrDashResponse.json(); } catch (_) {}
+  }
+  if (hrAppResponse?.ok) {
+    try {
+      const appData = await hrAppResponse.json();
+      state.hr.pendingApprovals = Array.isArray(appData) ? appData : (appData.requests || []);
+    } catch (_) {}
+  }
+
   try {
     const notifRes = await fetch('/api/hr/notifications/unread-count', { credentials: 'include' });
     if (notifRes.ok) {
@@ -155,32 +190,82 @@ export async function loadData() {
 export function runGlobalSearch(renderFn) {
   const query = state.query.trim().toLowerCase();
   if (!query) return;
-  if (state.users.some(user => `${user.name} ${user.email} ${user.company}`.toLowerCase().includes(query))) state.view = 'users';
-  else if (state.companies.some(company => `${company.name} ${company.rnc}`.toLowerCase().includes(query))) state.view = 'companies';
-  else if (state.branches.some(branch => `${branch.name} ${branch.code} ${branch.company}`.toLowerCase().includes(query))) state.view = 'branches';
+  if (state.users.some(user => `${user.name} ${user.email}`.toLowerCase().includes(query))) state.view = 'users';
+  else if (state.branches.some(branch => `${branch.name} ${branch.code}`.toLowerCase().includes(query))) state.view = 'branches';
   else { toast('No encontramos coincidencias.'); return; }
   renderFn();
 }
 
 export async function saveEntityForm(formElement, renderFn) {
   const data = Object.fromEntries(new FormData(formElement));
-  const endpoint = state.view === 'company-form' ? '/api/companies' : '/api/users';
-  const response = await fetch(endpoint, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  const isEditUser = state.userEditId != null;
+
+  const endpoint = isEditUser ? `/api/users/${state.userEditId}` : '/api/users';
+  const method = isEditUser ? 'PUT' : 'POST';
+
+  const response = await fetch(endpoint, {
+    method,
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+
   const result = await response.json();
   if (!response.ok) throw new Error(result.message || 'No fue posible guardar la información.');
+
   await loadData();
-  state.view = state.view === 'company-form' ? 'companies' : 'users';
+
+  if (isEditUser) {
+    state.detail = state.userEditId;
+    state.view = 'user-detail';
+    state.userEditId = null;
+    toast('Usuario actualizado correctamente.');
+  } else {
+    state.view = 'users';
+    toast('Usuario creado correctamente.');
+  }
   state.query = '';
-  toast(state.view === 'companies' ? 'Empresa creada correctamente.' : 'Usuario creado correctamente.');
   renderFn();
+  return { result, isEditUser, data };
+}
+
+/** Carga los usuarios activos de una empresa para el selector de encargado. */
+export async function loadBranchManagers(companyId) {
+  state.branchManagers = [];
+  if (!companyId) return;
+  try {
+    const response = await fetch(`/api/branches/managers?companyId=${encodeURIComponent(companyId)}`, { credentials: 'include' });
+    if (response.ok) state.branchManagers = await response.json();
+  } catch { /* el selector queda con "Sin encargado" */ }
+}
+
+/** Carga los usuarios asignados a la sucursal abierta en el detalle. */
+export async function loadBranchUsers(branchId) {
+  state.branchUsers = [];
+  try {
+    const response = await fetch(`/api/branches/${branchId}/users`, { credentials: 'include' });
+    if (response.ok) state.branchUsers = await response.json();
+  } catch { /* se muestra la lista vacía */ }
 }
 
 export async function saveBranchForm(formElement, renderFn) {
-  const response = await fetch('/api/branches', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.fromEntries(new FormData(formElement))) });
+  const editing = state.branchEditId != null;
+  const payload = Object.fromEntries(new FormData(formElement));
+  const response = await fetch(editing ? `/api/branches/${state.branchEditId}` : '/api/branches', {
+    method: editing ? 'PUT' : 'POST', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+  });
   const result = await response.json();
   if (!response.ok) throw new Error(result.message || 'No fue posible guardar la sucursal.');
   await loadData();
-  state.view = 'branches';
-  toast('Sucursal creada correctamente.');
+  if (editing) {
+    state.detail = state.branchEditId;
+    state.view = 'branch-detail';
+    await loadBranchUsers(state.detail);
+  } else {
+    state.view = 'branches';
+  }
+  state.branchEditId = null;
+  toast(editing ? 'Sucursal actualizada correctamente.' : 'Sucursal creada correctamente.');
   renderFn();
 }

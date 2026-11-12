@@ -1,0 +1,366 @@
+/* ==========================================================================
+   SAP FIORI HORIZON — SHELL & NAVIGATION BARS
+   Shell Bar superior, Omnibar de búsqueda, Spaces Bar y Subnavegación de Apps
+   ========================================================================== */
+
+.fiori-app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: #f5f7fa;
+  color: #0f172a;
+}
+
+/* 1. Fiori Shell Bar (Topmost) */
+.fiori-shell-bar {
+  height: 48px;
+  background-color: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+
+.fiori-shell-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.fiori-brand-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+
+.fiori-brand-btn:hover {
+  background: #f1f5f9;
+}
+
+.fiori-brand-mark img {
+  width: 22px;
+  height: 22px;
+  display: block;
+}
+
+.fiori-brand-name {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 800;
+  color: #0070f2;
+  letter-spacing: -0.3px;
+}
+
+.fiori-space-selector {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: #f1f5f9;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  border: 1px solid #e2e8f0;
+}
+
+.fiori-dropdown-chevron {
+  width: 14px;
+  height: 14px;
+  color: #64748b;
+}
+
+/* Omnibar Center */
+.fiori-shell-center {
+  flex: 1;
+  max-width: 580px;
+  margin: 0 20px;
+}
+
+.fiori-search-omnibar {
+  display: flex;
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 20px;
+  padding: 2px 4px 2px 12px;
+  height: 32px;
+  transition: all 0.15s ease;
+}
+
+.fiori-search-omnibar:focus-within {
+  border-color: #0070f2;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(0, 112, 242, 0.15);
+}
+
+.fiori-search-icon {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  flex-shrink: 0;
+  color: #94a3b8;
+  margin-right: 8px;
+}
+
+.fiori-search-scope {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  padding-right: 6px;
+}
+
+.fiori-search-divider {
+  width: 1px;
+  height: 16px;
+  background: #cbd5e1;
+  margin: 0 6px;
+}
+
+.fiori-search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  color: #0f172a;
+  outline: none;
+  padding: 0 4px;
+}
+
+.fiori-search-input::placeholder {
+  color: #94a3b8;
+}
+
+.fiori-search-action-btn {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fiori-search-action-btn:hover {
+  color: #0070f2;
+}
+
+/* Shell Right Actions */
+.fiori-shell-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fiori-shell-icon-btn {
+  background: transparent;
+  border: none;
+  color: #475569;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.fiori-shell-icon-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.fiori-avatar-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  border-radius: 50%;
+  outline: none;
+}
+
+.fiori-user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #0070f2;
+  color: #ffffff;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 12px;
+  display: grid;
+  place-items: center;
+  letter-spacing: 0.5px;
+  box-shadow: 0 1px 3px rgba(0, 112, 242, 0.3);
+  transition: transform 0.15s ease;
+}
+
+.fiori-avatar-btn:hover .fiori-user-avatar {
+  transform: scale(1.06);
+}
+
+/* 2. Spaces & Pages Bar */
+.fiori-spaces-bar {
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  position: sticky;
+  top: 48px;
+  z-index: 990;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.02);
+}
+
+.fiori-spaces-scroll-wrap {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.fiori-spaces-scroll-wrap::-webkit-scrollbar {
+  display: none;
+}
+
+.fiori-space-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+
+.fiori-space-tab:hover {
+  color: #0070f2;
+  background: #f8fafc;
+}
+
+.fiori-space-tab.active {
+  color: #0070f2;
+  font-weight: 700;
+  border-bottom-color: #0070f2;
+}
+
+.fiori-tab-badge {
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+/* 2b. Barra Contextual de la App Activa (Administración, RRHH, Inventario, Finanzas) */
+.fiori-app-bar {
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  border-bottom: 1px solid #e2e8f0;
+  position: sticky;
+  top: 90px;
+  z-index: 980;
+}
+
+.fiori-app-bar .fiori-spaces-scroll-wrap {
+  padding: 6px 24px;
+  gap: 6px;
+}
+
+.fiori-app-bar-title {
+  background: #0070f2;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+
+.fiori-app-bar-title:hover {
+  background: #005fcc;
+}
+
+.fiori-app-bar-sep {
+  width: 1px;
+  height: 18px;
+  background: #cbd5e1;
+  margin: 0 8px;
+  flex-shrink: 0;
+}
+
+.fiori-subnav-item {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.fiori-subnav-item:hover {
+  background: #eef2f7;
+  color: #0070f2;
+}
+
+.fiori-subnav-item.active {
+  background: #ffffff;
+  color: #0070f2;
+  font-weight: 700;
+  border-color: #cfe0fb;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.fiori-subnav-item .fiori-tab-badge {
+  margin-left: 6px;
+}
+
+/* 3. Main Viewport */
+.fiori-main-viewport {
+  flex: 1;
+  background: #f5f7fa;
+}
+
+.fiori-content-wrapper {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 20px 24px;
+}
+
+@media (max-width: 768px) {
+  .fiori-shell-center {
+    display: none;
+  }
+}
+

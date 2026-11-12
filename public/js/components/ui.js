@@ -1,4 +1,4 @@
-import { state, canManageRoles, canAccessView } from '../core/state.js';
+import { state, canAccessView } from '../core/state.js';
 import { escapeHtml, toast } from './utils.js';
 import { loadData } from '../core/api.js';
 
@@ -14,133 +14,115 @@ export function pageHeader(title, description, action = '', badgeText = '') {
   </div>`;
 }
 
+// Jerarquía de navegación única (alineada 1:1 con server/modules).
+const CRUMBS = {
+  // Módulo: Administración (server/modules/admin/routes)
+  'admin':              { label: 'Administración' },
+  'companies':          { label: 'Administración' },
+  'users':              { parent: 'admin', label: 'Usuarios' },
+  'user-detail':        { parent: 'users', label: 'Usuario' },
+  'user-form':          { parent: 'users', label: 'Usuario' },
+  'branches':           { parent: 'admin', label: 'Sucursales' },
+  'branch-detail':      { parent: 'branches', label: 'Sucursal' },
+  'branch-form':        { parent: 'branches', label: 'Sucursal' },
+  'roles':              { parent: 'admin', label: 'Roles y permisos' },
+  'audit':              { parent: 'admin', label: 'Auditoría' },
+
+  // Módulo: Recursos Humanos (server/modules/hr/routes)
+  'hr-dashboard':       { label: 'Recursos Humanos' },
+  'hr-employees':       { parent: 'hr-dashboard', label: 'Empleados' },
+  'hr-employee-form':   { parent: 'hr-employees', label: 'Empleado' },
+  'hr-employee-detail': { parent: 'hr-employees', label: 'Expediente' },
+  'hr-departments':     { parent: 'hr-dashboard', label: 'Departamentos' },
+  'hr-positions':       { parent: 'hr-dashboard', label: 'Cargos y Puestos' },
+  'hr-orgchart':        { parent: 'hr-dashboard', label: 'Organigrama' },
+  'hr-attendance':      { parent: 'hr-dashboard', label: 'Asistencia & Turnos' },
+  'hr-vacations':       { parent: 'hr-dashboard', label: 'Vacaciones & Permisos' },
+  'hr-approvals':       { parent: 'hr-dashboard', label: 'Aprobaciones' },
+
+  // Módulo: Inventario & Stock (server/modules/inventory/routes)
+  'inventory':          { label: 'Inventario & Stock' },
+  'products':           { parent: 'inventory', label: 'Productos' },
+  'stock':              { parent: 'inventory', label: 'Existencias' },
+  'movements':          { parent: 'inventory', label: 'Entradas / salidas' },
+  'alerts':             { parent: 'inventory', label: 'Alertas' },
+
+  // Módulo: Finanzas (server/modules/finance/routes)
+  'finance':              { label: 'Finanzas' },
+  'finance-transactions': { parent: 'finance', label: 'Transacciones' },
+  'finance-invoices':     { parent: 'finance', label: 'Facturas' },
+  'finance-contacts':     { parent: 'finance', label: 'Clientes y Proveedores' },
+  'finance-banking':      { parent: 'finance', label: 'Conciliación Bancaria' },
+
+  'profile':            { label: 'Mi perfil' }
+};
+
+function adminHome() {
+  return ['companies', 'users', 'branches', 'roles', 'audit'].find(v => canAccessView(v)) || 'companies';
+}
+
+/**
+ * Construye el camino de navegación a partir de la vista actual.
+ */
 export function breadcrumb(items) {
-  return `<div class="breadcrumb">${items.map((item, i) => i < items.length - 1 ? `<button data-nav="${item[0]}">${item[1]}</button> <span> / </span>` : `<strong>${item[1]}</strong>`).join('')}</div>`;
+  const leafLabel = items?.length ? items[items.length - 1][1] : '';
+  const node = CRUMBS[state.view];
+  let trail;
+
+  if (!node) {
+    trail = items || [];
+  } else {
+    trail = [];
+    let key = state.view;
+    while (key) {
+      if (key === 'admin') {
+        trail.unshift([adminHome(), 'Administración']);
+        break;
+      }
+      const n = CRUMBS[key];
+      if (!n) break;
+      trail.unshift([key, n.label]);
+      key = n.parent;
+    }
+    // Solo las vistas dinámicas (nombre real, "Nuevo...", etc.) aportan su etiqueta final
+    const dynamic = /-(detail|form)$/.test(state.view);
+    if (dynamic && leafLabel) trail[trail.length - 1][1] = leafLabel;
+  }
+
+  return `<nav class="breadcrumb" aria-label="Ruta de navegación">${trail.map((item, i) => i < trail.length - 1
+    ? `<button data-nav="${item[0]}">${item[1]}</button><span>/</span>`
+    : `<strong>${item[1]}</strong>`).join('')}</nav>`;
 }
 
-export function currentOptions() {
-  const cards = [];
-
-  if (canAccessView('hr-dashboard') || canAccessView('hr-employees')) {
-    cards.push(`
-      <button class="option-card" data-nav="hr-dashboard">
-        <span class="option-icon blue">
-          <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
-        </span>
-        <span><strong>Recursos Humanos</strong><small>Colaboradores y organigrama</small></span>
-        <b>→</b>
-      </button>`);
-  }
-
-  if (canAccessView('hr-attendance')) {
-    cards.push(`
-      <button class="option-card" data-nav="hr-attendance">
-        <span class="option-icon amber">
-          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
-        </span>
-        <span><strong>Asistencia y Turnos</strong><small>Terminal digital y ponches</small></span>
-        <b>→</b>
-      </button>`);
-  }
-
-  if (canAccessView('hr-vacations')) {
-    cards.push(`
-      <button class="option-card" data-nav="hr-vacations">
-        <span class="option-icon green">
-          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/></svg>
-        </span>
-        <span><strong>Vacaciones y Permisos</strong><small>Saldos y Código de Trabajo</small></span>
-        <b>→</b>
-      </button>`);
-  }
-
-  if (canAccessView('hr-approvals')) {
-    cards.push(`
-      <button class="option-card" data-nav="hr-approvals">
-        <span class="option-icon purple">
-          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
-        </span>
-        <span><strong>Bandeja Aprobaciones</strong><small>Resolución multinivel</small></span>
-        <b>→</b>
-      </button>`);
-  }
-
-  if (canAccessView('inventory')) {
-    cards.push(`
-      <button class="option-card" data-nav="inventory">
-        <span class="option-icon green">
-          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 2a1 1 0 00-1 1v1a1 1 0 002 0V3a1 1 0 00-1-1zM4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/></svg>
-        </span>
-        <span><strong>Inventario & Stock</strong><small>Existencias y movimientos</small></span>
-        <b>→</b>
-      </button>`);
-  }
-
-  if (canAccessView('finance')) {
-    cards.push(`
-      <button class="option-card" data-nav="finance">
-        <span class="option-icon blue">
-          <svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z"/><path fill-rule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clip-rule="evenodd"/></svg>
-        </span>
-        <span><strong>Finanzas Operativas</strong><small>Ingresos, gastos y facturas</small></span>
-        <b>→</b>
-      </button>`);
-  }
-
-  if (canAccessView('companies')) {
-    cards.push(`
-      <button class="option-card" data-nav="companies">
-        <span class="option-icon slate">
-          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4zm3 1h6v4H7V5zm6 6H7v2h6v-2z" clip-rule="evenodd"/></svg>
-        </span>
-        <span><strong>Empresas & Sedes</strong><small>Estructura multiempresa</small></span>
-        <b>→</b>
-      </button>`);
-  }
-
-  if (canAccessView('users')) {
-    cards.push(`
-      <button class="option-card" data-nav="users">
-        <span class="option-icon slate">
-          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>
-        </span>
-        <span><strong>Usuarios & Cuentas</strong><small>Gestión de credenciales</small></span>
-        <b>→</b>
-      </button>`);
-  }
-
-  if (canManageRoles()) {
-    cards.push(`
-      <button class="option-card" data-nav="roles">
-        <span class="option-icon purple">
-          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
-        </span>
-        <span><strong>Roles y Permisos</strong><small>Control RBAC y accesos</small></span>
-        <b>→</b>
-      </button>`);
-  }
-
-  return `<div class="workspace-options">
-    <div class="workspace-options-head">
-      <div>
-        <h3>Módulos y Servicios Habilitados</h3>
-        <span class="panel-note">Accesos asignados según tu rol y privilegios</span>
-      </div>
-      <span class="page-heading-chip" style="margin:0;">ACCESO OPERATIVO</span>
-    </div>
-    <div class="option-grid">
-      ${cards.join('')}
-    </div>
-  </div>`;
-}
-
-export function showModal(title, body, confirmText, callback = null) {
+export function showModal(title, body, confirmText, callback = null, options = {}) {
   const backdrop = document.createElement('div');
   backdrop.className = 'modal-backdrop';
-  const confirmBtnHtml = confirmText ? `<button class="primary modal-confirm">${confirmText}</button>` : '';
-  backdrop.innerHTML = `<div class="modal"><h2>${title}</h2><div>${body}</div><div class="modal-actions"><button class="secondary modal-cancel">${confirmText ? 'Cancelar' : 'Cerrar'}</button>${confirmBtnHtml}</div></div>`;
+  const sizeOption = typeof options === 'string' ? options : (options?.size || '');
+  const sizeClass = sizeOption ? `modal-${sizeOption}` : '';
+  const confirmBtnHtml = confirmText ? `<button type="button" class="primary modal-confirm">${confirmText}</button>` : '';
+  backdrop.innerHTML = `
+    <div class="modal ${sizeClass}">
+      <div class="modal-header">
+        <h2>${title}</h2>
+        <button type="button" class="modal-close-btn" aria-label="Cerrar modal">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        ${body}
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="secondary modal-cancel">${confirmText ? 'Cancelar' : 'Cerrar'}</button>
+        ${confirmBtnHtml}
+      </div>
+    </div>
+  `;
   document.body.append(backdrop);
-  backdrop.querySelector('.modal-cancel').onclick = () => backdrop.remove();
+
+  const closeModal = () => backdrop.remove();
+  backdrop.querySelector('.modal-cancel')?.addEventListener('click', closeModal);
+  backdrop.querySelector('.modal-close-btn')?.addEventListener('click', closeModal);
+
   const confirmBtn = backdrop.querySelector('.modal-confirm');
   if (confirmBtn) {
     confirmBtn.onclick = async () => {
@@ -184,7 +166,7 @@ export async function showRoleModal(roleName, roleId = null, onRender = () => {}
     <div class="field">
       <label>Nombre del rol</label>
       <input class="role-name" value="${escapeHtml(currentName)}" ${isSystemRole ? 'disabled' : ''} placeholder="Ej. Supervisor de Despacho">
-      ${isSystemRole ? '<small style="color:var(--muted);font-size:11px;margin-top:3px;display:block;">🔒 Rol esencial del sistema: nombre protegido contra modificación.</small>' : ''}
+      ${isSystemRole ? '<small style="color:var(--muted);font-size:11px;margin-top:3px;display:flex;align-items:center;gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Rol esencial del sistema: nombre protegido contra modificación.</small>' : ''}
     </div>
     <div class="field" style="margin-top:12px">
       <label>Descripción</label>
@@ -193,9 +175,9 @@ export async function showRoleModal(roleName, roleId = null, onRender = () => {}
     <div style="display:flex;gap:8px;margin-top:18px;margin-bottom:8px;align-items:center;justify-content:space-between;padding-bottom:6px;border-bottom:1px solid var(--border,#334155);">
       <span style="font-weight:600;font-size:13px;">Funciones del Sistema</span>
       <div style="display:flex;gap:8px;font-size:12px;">
-        <button type="button" class="btn-select-all" style="background:none;border:none;color:var(--primary,#3b82f6);cursor:pointer;font-weight:500;">✓ Marcar todos</button>
+        <button type="button" class="btn-select-all" style="background:none;border:none;color:var(--primary,#3b82f6);cursor:pointer;font-weight:500;">Marcar todos</button>
         <span style="color:var(--muted,#64748b);">|</span>
-        <button type="button" class="btn-deselect-all" style="background:none;border:none;color:var(--muted,#94a3b8);cursor:pointer;font-weight:500;">✗ Desmarcar todos</button>
+        <button type="button" class="btn-deselect-all" style="background:none;border:none;color:var(--muted,#94a3b8);cursor:pointer;font-weight:500;">Desmarcar todos</button>
       </div>
     </div>
     <div class="permission-grid">
@@ -267,7 +249,7 @@ export async function showRoleModal(roleName, roleId = null, onRender = () => {}
       await loadData();
     } catch (_) {}
     if (typeof onRender === 'function') onRender();
-  });
+  }, { size: 'lg' });
 
   // Delegación rápida para los botones de selección
   setTimeout(() => {

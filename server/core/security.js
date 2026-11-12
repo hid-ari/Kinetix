@@ -27,3 +27,19 @@ export function securityHeadersMiddleware(_request, response, next) {
   }
   next();
 }
+
+/**
+ * Defensa CSRF complementaria a SameSite=Lax: en métodos que modifican datos,
+ * si el navegador envía Origin, debe coincidir con el Host de la petición.
+ * Peticiones sin Origin (curl, scripts, tests) se permiten.
+ */
+export function sameOriginMiddleware(request, response, next) {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(request.method)) return next();
+  const origin = request.get('origin');
+  if (!origin) return next();
+  try {
+    if (new URL(origin).host === request.get('host')) return next();
+  } catch (_error) { /* Origin inválido: se rechaza abajo */ }
+  return response.status(403).json({ message: 'Origen de la petición no permitido.' });
+}
+

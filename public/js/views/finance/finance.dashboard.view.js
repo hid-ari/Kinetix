@@ -9,7 +9,7 @@ export function finance() {
   const balance = income - expense;
 
   return `
-    ${breadcrumb([['dashboard', 'Espacio de trabajo'], ['finance', 'Finanzas']])}
+    ${breadcrumb([['finance', 'Finanzas']])}
     ${pageHeader('Finanzas', 'Controla ingresos, gastos, facturas y pagos de tu organización.', hasPermission('Finanzas', 'Registrar transacciones') ? '<button class="primary" data-action="new-expense">＋ Registrar gasto</button>' : '')}
     
     <div class="hr-stats-grid finance-stats" style="margin-bottom: 24px;">

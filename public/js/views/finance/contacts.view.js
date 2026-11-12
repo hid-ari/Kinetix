@@ -1,15 +1,20 @@
-import { state } from '../../core/state.js';
+import { state, hasPermission } from '../../core/state.js';
 import { escapeHtml, initials } from '../../components/utils.js';
+import { breadcrumb, pageHeader } from '../../components/ui.js';
 
 export function financeContactsView() {
+  const canCreate = hasPermission('Finanzas', 'Registrar transacciones');
   return `
+    ${breadcrumb([['finance', 'Finanzas'], ['finance-contacts', 'Clientes y Proveedores']])}
+    ${pageHeader('Directorio Comercial', 'Gestión de clientes y proveedores para operaciones y facturación.', canCreate ? '<button class="primary" data-action="new-contact">＋ Nuevo contacto</button>' : '')}
+
     <div class="panel">
       <div class="panel-head">
         <div>
-          <h2>Directorio Comercial</h2>
-          <p class="panel-note">Clientes y proveedores para transacciones comerciales</p>
+          <h2>Contactos Comerciales</h2>
+          <p class="panel-note">Razón social e identificación fiscal</p>
         </div>
-        <button class="primary" data-action="new-contact">＋ Nuevo contacto</button>
+        <span class="panel-note">${state.finance.contacts.length} contactos</span>
       </div>
       <div class="table-wrap">
         <table>

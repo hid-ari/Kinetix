@@ -1,0 +1,103 @@
+/* ==========================================================================
+   SEGMENTED CONTROL & PILL TABS
+   Pestañas de detalle (.detail-tabs), pestañas de panel (.panel-tabs) y Fiori pills
+   ========================================================================== */
+
+.detail-tabs,
+.panel-tabs {
+  display: inline-flex;
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  gap: 4px;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.detail-tabs {
+  margin-bottom: 24px;
+}
+
+.detail-tabs button,
+.tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+}
+
+.detail-tabs button:hover,
+.tab-btn:hover {
+  color: #0f172a;
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.detail-tabs button.active,
+.tab-btn.active {
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 700;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 7px;
+  min-width: 20px;
+  height: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 10px;
+  background: #e2e8f0;
+  color: #475569;
+  transition: all 0.18s ease;
+}
+
+.tab-btn.active .tab-badge {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+/* Fiori Section Pill Tabs */
+.fiori-pill-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fiori-pill-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.fiori-pill-tab:hover {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+.fiori-pill-tab.active {
+  background: #e0f2fe;
+  color: #0284c7;
+  font-weight: 600;
+  border-color: #bae6fd;
+}
+

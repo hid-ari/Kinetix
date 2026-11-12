@@ -1,0 +1,92 @@
+/* ==========================================================================
+   BASE RESET & TYPOGRAPHY
+   Normalización del navegador, tipografía base, estados focus y scrollbars
+   ========================================================================== */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  background-image:
+    radial-gradient(at 100% 0%, rgba(37, 99, 235, 0.035) 0px, transparent 45%),
+    radial-gradient(at 0% 100%, rgba(124, 58, 237, 0.03) 0px, transparent 45%);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: var(--font-sans);
+}
+
+button {
+  cursor: pointer;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--royal);
+  outline-offset: 1px;
+}
+
+/* Tipografía de Encabezados */
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+h1 {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--navy);
+}
+
+h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--navy);
+}
+
+h3 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.subtitle {
+  color: var(--muted);
+  font-size: 13.5px;
+  margin: 5px 0 0;
+  line-height: 1.5;
+}
+
+/* Scrollbars Personalizados */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+

@@ -1,6 +1,6 @@
 import 'dotenv/config';
-import sql from 'mssql/msnodesqlv8.js';
 import assert from 'node:assert';
+import { db } from '../server/core/db.js';
 import { validateDominicanCedula, validateDocument } from '../server/modules/hr/validators.js';
 import { generateNextEmployeeCode } from '../server/modules/hr/repositories/catalogs.repo.js';
 import { checkDepartmentCycle } from '../server/modules/hr/repositories/departments.repo.js';
@@ -20,33 +20,26 @@ async function runTests() {
   assert.strictEqual(validateDocument('Pasaporte', 'RD1234567').valid, true, 'Pasaporte debe ser válido');
   console.log('   ✓ Validación de Cédula (Luhn) y Pasaportes pasó exitosamente.');
 
-  // Connect to DB for remaining tests
-  const server = process.env.DB_SERVER || '(localdb)\\MSSQLLocalDB';
-  const database = process.env.DB_DATABASE || 'KinetixCore';
-  const pool = await sql.connect({
-    server, database, driver: 'msnodesqlv8',
-    connectionString: `Driver={ODBC Driver 18 for SQL Server};Server=${server};Database=${database};Trusted_Connection=Yes;Encrypt=No;TrustServerCertificate=Yes;`,
-    options: { trustedConnection: true, trustServerCertificate: true }
-  });
+  const pool = db;
 
   try {
     // TEST 2: Inmutabilidad de AuditLogs (Trigger TR_AuditLogs_Immutable)
     console.log('\n2. Probando inmutabilidad física en dbo.AuditLogs (Trigger)...');
-    const compRes = await pool.request().query('SELECT TOP 1 Id FROM dbo.Companies');
+    const compRes = await pool.request().query('SELECT Id FROM Companies LIMIT 1');
     const companyId = compRes.recordset[0]?.Id;
     assert(companyId, 'Debe existir al menos una empresa');
 
     // Insert test audit record
     const insRes = await pool.request()
-      .input('companyId', sql.Int, companyId)
-      .input('action', sql.NVarChar, 'CREATE')
-      .input('module', sql.NVarChar, 'RRHH Configuración')
-      .input('entity', sql.NVarChar, 'TestEntity')
-      .input('entityId', sql.NVarChar, 'TEST-123')
+      .input('companyId', companyId)
+      .input('action', 'CREATE')
+      .input('module', 'RRHH Configuración')
+      .input('entity', 'TestEntity')
+      .input('entityId', 'TEST-123')
       .query(`
-        INSERT INTO dbo.AuditLogs (CompanyId, ActionName, ModuleName, EntityName, EntityId, CreatedAt)
-        OUTPUT INSERTED.Id
-        VALUES (@companyId, @action, @module, @entity, @entityId, GETUTCDATE())
+        INSERT INTO AuditLogs (CompanyId, ActionName, ModuleName, EntityName, EntityId, CreatedAt)
+        VALUES (@companyId, @action, @module, @entity, @entityId, now())
+        RETURNING Id;
       `);
     const testAuditId = insRes.recordset[0].Id;
 
@@ -54,8 +47,8 @@ async function runTests() {
     let updateFailed = false;
     try {
       await pool.request()
-        .input('id', sql.Int, testAuditId)
-        .query("UPDATE dbo.AuditLogs SET ActionName = 'UPDATE' WHERE Id = @id");
+        .input('id', testAuditId)
+        .query("UPDATE AuditLogs SET ActionName = 'UPDATE' WHERE Id = @id");
     } catch (err) {
       updateFailed = true;
       assert(err.message.includes('inmutables') || err.message.includes('TRIGGER'), 'Error esperado de inmutabilidad');
@@ -66,8 +59,8 @@ async function runTests() {
     let deleteFailed = false;
     try {
       await pool.request()
-        .input('id', sql.Int, testAuditId)
-        .query('DELETE FROM dbo.AuditLogs WHERE Id = @id');
+        .input('id', testAuditId)
+        .query('DELETE FROM AuditLogs WHERE Id = @id');
     } catch (err) {
       deleteFailed = true;
       assert(err.message.includes('inmutables') || err.message.includes('TRIGGER'), 'Error esperado de inmutabilidad');
@@ -84,28 +77,29 @@ async function runTests() {
 
     // TEST 4: Detección y prevención de ciclos jerárquicos en Departamentos
     console.log('\n4. Probando prevención de ciclos en departamentos...');
+    await pool.request().query("DELETE FROM HrDepartments WHERE Code IN ('TEST-D1', 'TEST-D2')");
     // Create dept A
     const deptARes = await pool.request()
-      .input('companyId', sql.Int, companyId)
-      .input('code', sql.NVarChar, 'TEST-D1')
-      .input('name', sql.NVarChar, 'Dpto Raiz Test')
+      .input('companyId', companyId)
+      .input('code', 'TEST-D1')
+      .input('name', 'Dpto Raiz Test')
       .query(`
-        INSERT INTO dbo.HrDepartments (CompanyId, Code, Name, IsActive, CreatedAt)
-        OUTPUT INSERTED.Id
-        VALUES (@companyId, @code, @name, 1, GETUTCDATE())
+        INSERT INTO HrDepartments (CompanyId, Code, Name, IsActive, CreatedAt)
+        VALUES (@companyId, @code, @name, TRUE, now())
+        RETURNING Id;
       `);
     const deptAId = deptARes.recordset[0].Id;
 
     // Create dept B child of A
     const deptBRes = await pool.request()
-      .input('companyId', sql.Int, companyId)
-      .input('code', sql.NVarChar, 'TEST-D2')
-      .input('name', sql.NVarChar, 'Dpto Hijo Test')
-      .input('parent', sql.Int, deptAId)
+      .input('companyId', companyId)
+      .input('code', 'TEST-D2')
+      .input('name', 'Dpto Hijo Test')
+      .input('parent', deptAId)
       .query(`
-        INSERT INTO dbo.HrDepartments (CompanyId, Code, Name, ParentDepartmentId, IsActive, CreatedAt)
-        OUTPUT INSERTED.Id
-        VALUES (@companyId, @code, @name, @parent, 1, GETUTCDATE())
+        INSERT INTO HrDepartments (CompanyId, Code, Name, ParentDepartmentId, IsActive, CreatedAt)
+        VALUES (@companyId, @code, @name, @parent, TRUE, now())
+        RETURNING Id;
       `);
     const deptBId = deptBRes.recordset[0].Id;
 
@@ -119,7 +113,7 @@ async function runTests() {
     console.log('   ✓ Prevención de ciclos jerárquicos (árbol acíclico) verificada correctamente.');
 
     // Cleanup test departments
-    await pool.request().query(`DELETE FROM dbo.HrDepartments WHERE Id IN (${deptAId}, ${deptBId})`);
+    await pool.request().query(`DELETE FROM HrDepartments WHERE Id IN (${deptAId}, ${deptBId})`);
 
     // TEST 5: Sanitización de datos sensibles y salarios según permisos
     console.log('\n5. Probando ofuscación y protección de datos sensibles y salarios...');
@@ -175,6 +169,6 @@ async function runTests() {
 }
 
 runTests().catch(err => {
-  console.error('\n❌ ERROR EN PRUEBAS:', err);
+  console.error('\n[ERROR] EN PRUEBAS:', err);
   process.exit(1);
 });

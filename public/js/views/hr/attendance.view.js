@@ -1,5 +1,6 @@
-import { state } from '../../core/state.js';
+import { state, hasPermission } from '../../core/state.js';
 import { escapeHtml, initials } from '../../components/utils.js';
+import { breadcrumb } from '../../components/ui.js';
 
 export function attendanceView() {
   const today = state.hr.todayAttendance || {};
@@ -11,6 +12,8 @@ export function attendanceView() {
 
   const hasCheckedIn = Boolean(currentAttendance?.CheckInTime);
   const hasCheckedOut = Boolean(currentAttendance?.CheckOutTime);
+  const canExportAttendance = hasPermission('RRHH Asistencia', 'Exportar asistencia');
+  const canManageShifts = hasPermission('RRHH Asistencia', 'Administrar turnos');
 
   const isLinked = today.linked !== false;
 
@@ -63,6 +66,7 @@ export function attendanceView() {
   };
 
   return `
+    ${breadcrumb([['dashboard', 'Inicio'], ['hr-dashboard', 'Recursos Humanos'], ['hr-attendance', 'Asistencia']])}
     <div class="hr-view">
       <!-- Encabezado de Gestión de Asistencias -->
       <div class="view-header">
@@ -71,6 +75,12 @@ export function attendanceView() {
           <p class="subtitle">Registro en tiempo real, control de jornadas y cumplimiento de tolerancias laborales</p>
         </div>
         <div class="header-actions">
+          ${canExportAttendance ? `
+            <button class="secondary" data-action="hr-export-attendance">
+              <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+              <span>Exportar CSV</span>
+            </button>
+          ` : ''}
           <button class="secondary" data-action="hr-refresh-attendance">
             <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
             <span>Actualizar</span>
@@ -173,7 +183,7 @@ export function attendanceView() {
           <div class="stat-icon-wrapper green">
             <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
           </div>
-          <div class="stat-content">Acceso Rápido de Prueba:
+          <div class="stat-content">
             <span class="stat-label">Puntualidad</span>
             <strong class="stat-value">${list.filter(a => a.Status === 'Presente' || a.Status === 'Puntual' || a.Status === 'Completado').length}</strong>
             <span class="stat-sub">En el período consultado</span>
@@ -247,7 +257,7 @@ export function attendanceView() {
             <thead>
               <tr>
                 <th>Fecha</th>
-                <th>Colaborador</th>
+                <th>Empleado</th>
                 <th>Turno</th>
                 <th>Entrada</th>
                 <th>Salida</th>
@@ -272,17 +282,20 @@ export function attendanceView() {
                   </td>
                 </tr>
               ` : list.map(item => {
-            const empName = item.FirstName ? `${item.FirstName} ${item.LastName}` : (employee ? `${employee.FirstName} ${employee.LastName}` : 'Colaborador');
+            const empName = item.EmployeeName || (item.FirstName ? `${item.FirstName} ${item.LastName}` : (employee ? `${employee.FirstName} ${employee.LastName}` : 'Empleado'));
             const empInit = initials(empName);
+            const rawDate = item.WorkDate || item.AttendanceDate;
+            const regularHours = item.RegularHours ?? Number((item.RegularMinutes || 0) / 60).toFixed(2);
+            const overtimeHours = item.OvertimeHours ?? Number((item.OvertimeMinutes || 0) / 60).toFixed(2);
             return `
                 <tr>
-                  <td><strong>${formatDate(item.AttendanceDate)}</strong></td>
+                  <td><strong>${formatDate(rawDate)}</strong></td>
                   <td>
                     <div class="emp-cell-flex">
                       <div class="emp-avatar-sm">${escapeHtml(empInit)}</div>
                       <div class="emp-cell-info">
                         <strong>${escapeHtml(empName)}</strong>
-                        <small>${escapeHtml(item.PositionTitle || item.EmployeeCode || 'Personal')}</small>
+                        <small>${escapeHtml(item.PositionTitle || item.DepartmentName || item.EmployeeCode || 'Personal')}</small>
                       </div>
                     </div>
                   </td>
@@ -290,11 +303,11 @@ export function attendanceView() {
                   <td>${formatTime(item.CheckInTime)}</td>
                   <td>${formatTime(item.CheckOutTime)}</td>
                   <td>${item.LateMinutes > 0 ? `<span class="late-tag">+${item.LateMinutes} min</span>` : '<span style="color:#94a3b8;">0 min</span>'}</td>
-                  <td>${Number(item.RegularHours || 0).toFixed(2)} h</td>
-                  <td>${item.OvertimeHours > 0 ? `<strong style="color:#059669;">${Number(item.OvertimeHours).toFixed(2)} h</strong>` : '<span style="color:#94a3b8;">0.00 h</span>'}</td>
+                  <td>${Number(regularHours || 0).toFixed(2)} h</td>
+                  <td>${Number(overtimeHours) > 0 ? `<strong style="color:#059669;">${Number(overtimeHours).toFixed(2)} h</strong>` : '<span style="color:#94a3b8;">0.00 h</span>'}</td>
                   <td>${renderStatusBadge(item.Status)}</td>
                   <td style="text-align:right;">
-                    <button class="icon-btn-action" data-action="hr-correct-attendance-row" data-id="${item.Id}" data-date="${item.AttendanceDate?.slice(0, 10)}" title="Solicitar Corrección">
+                    <button class="icon-btn-action" data-action="hr-correct-attendance-row" data-id="${item.Id}" data-date="${typeof rawDate === 'string' ? rawDate.slice(0, 10) : ''}" title="Solicitar Corrección">
                       <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>
                     </button>
                   </td>
@@ -313,18 +326,24 @@ export function attendanceView() {
             <svg viewBox="0 0 20 20" fill="currentColor" style="width:18px;height:18px;color:#2563eb;"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/></svg>
             <span>Turnos Laborales Registrados</span>
           </h3>
-          <span style="font-size:12px;color:#64748b;">Políticas horarias y tolerancias vigentes</span>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span style="font-size:12px;color:#64748b;">Políticas horarias y tolerancias vigentes</span>
+            ${canManageShifts ? `<button class="secondary btn-sm" data-action="hr-open-shift-modal">＋ Nuevo turno</button>` : ''}
+          </div>
         </div>
         <div class="grid-cards-shifts">
           ${shifts.map(s => `
             <div class="shift-card">
               <div class="shift-card-head">
                 <strong>${escapeHtml(s.Name)}</strong>
-                <span class="badge-pill ${s.IsActive ? 'success' : 'neutral'}"><span class="badge-pill-dot"></span>${s.IsActive ? 'Activo' : 'Inactivo'}</span>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <span class="badge-pill ${s.IsActive ? 'success' : 'neutral'}"><span class="badge-pill-dot"></span>${s.IsActive ? 'Activo' : 'Inactivo'}</span>
+                  ${canManageShifts ? `<button class="icon-btn-action" data-action="hr-edit-shift" data-id="${s.Id}" title="Editar turno"><svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg></button>` : ''}
+                </div>
               </div>
-              <p class="shift-desc">${escapeHtml(s.Description || 'Turno operativo regular')}</p>
+              <p class="shift-desc">${escapeHtml(s.Description || `${s.Code || 'TURNO'} · ${s.ShiftType || 'Diurno'}`)}</p>
               <div class="shift-times">
-                <div><span>Horario laboral:</span> <strong>${s.StartTime ? s.StartTime.slice(0, 5) : '08:00'} - ${s.EndTime ? s.EndTime.slice(0, 5) : '17:00'}</strong></div>
+                <div><span>Horario laboral:</span> <strong>${s.StartTime ? String(s.StartTime).slice(0, 5) : '08:00'} - ${s.EndTime ? String(s.EndTime).slice(0, 5) : '17:00'}</strong></div>
                 <div><span>Tolerancia de entrada:</span> <strong>${s.GraceMinutes ?? s.GracePeriodMinutes ?? 0} min</strong></div>
                 <div><span>Tiempo de almuerzo:</span> <strong>${s.BreakMinutes ?? s.LunchDurationMinutes ?? 0} min</strong></div>
               </div>

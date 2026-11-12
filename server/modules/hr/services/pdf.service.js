@@ -91,7 +91,7 @@ export function generateEmployeePdf(employee, res, { companyName = 'Kinetix Core
   currentY = drawSectionTitle('2. Información Laboral y Organizacional', currentY);
 
   drawField('Empresa / Razón Social', companyName, 50, currentY);
-  drawField('Sucursal / Sede', employee.BranchName, 210, currentY);
+  drawField('Sucursal', employee.BranchName, 210, currentY);
   drawField('Departamento', employee.DepartmentName, 370, currentY);
 
   currentY += 32;

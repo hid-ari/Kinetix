@@ -9,7 +9,7 @@ import {
 } from '../repositories/documents.repo.js';
 import { getEmployeeById } from '../repositories/employees.repo.js';
 import { assertCompanyAccess, assertEmployeeAccess, hasPermission, isGlobalAdmin, isCompanyAdmin } from '../access.js';
-import { uploadDocument, saveFile, getFilePath } from '../storage.js';
+import { uploadDocument, withUpload, saveFile, getFilePath } from '../storage.js';
 
 export function createDocumentsRouter(ctx) {
   const router = express.Router();
@@ -27,7 +27,7 @@ export function createDocumentsRouter(ctx) {
     }
   });
 
-  router.post('/employees/:id/documents', requirePermission('RRHH Expedientes', 'Cargar documentos'), uploadDocument.single('file'), async (req, res) => {
+  router.post('/employees/:id/documents', requirePermission('RRHH Expedientes', 'Cargar documentos'), withUpload(uploadDocument.single('file')), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: 'Se requiere adjuntar un archivo.' });
@@ -42,7 +42,6 @@ export function createDocumentsRouter(ctx) {
         return res.status(400).json({ message: 'Tipo de documento y título son obligatorios.' });
       }
 
-      // Save file
       const savedFile = await saveFile({
         pool,
         buffer: req.file.buffer,
@@ -81,7 +80,7 @@ export function createDocumentsRouter(ctx) {
     }
   });
 
-  router.post('/documents/:id/versions', requirePermission('RRHH Expedientes', 'Cargar documentos'), uploadDocument.single('file'), async (req, res) => {
+  router.post('/documents/:id/versions', requirePermission('RRHH Expedientes', 'Cargar documentos'), withUpload(uploadDocument.single('file')), async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ message: 'Se requiere adjuntar un archivo.' });
 

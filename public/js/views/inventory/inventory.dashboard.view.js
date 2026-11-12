@@ -59,7 +59,7 @@ export function inventoryStats() {
 export function inventory() {
   const lowStock = state.products.filter(product => product.stock <= product.minimum);
   return `
-    ${breadcrumb([['dashboard', 'Espacio de trabajo'], ['inventory', 'Inventario']])}
+    ${breadcrumb([['inventory', 'Inventario']])}
     ${pageHeader('Inventario', 'Control operativo de productos, existencias y movimientos.', hasPermission('Movimientos', 'Registrar movimientos') ? '<button class="primary" data-nav="movements">＋ Registrar movimiento</button>' : '')}
     ${inventoryStats()}
     <div class="grid-2">
